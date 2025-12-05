@@ -1,0 +1,15 @@
+# Node
+node_modules
+dist
+build
+
+# Env files (ASLA repoya girmesin)
+.env
+*.env
+backend/.env
+frontend/.env
+
+# OS / editor junk
+.DS_Store
+.vscode
+.idea

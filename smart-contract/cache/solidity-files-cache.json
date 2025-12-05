@@ -1,0 +1,77 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "/Users/hodjam/hodl-or-die/smart-contract/contracts/HodlOrDieWeekly.sol": {
+      "lastModificationDate": 1764107667993,
+      "contentHash": "69afa8509732425d9394a3b6f502998b",
+      "sourceName": "contracts/HodlOrDieWeekly.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "HodlOrDieWeekly"
+      ]
+    },
+    "/Users/hodjam/hodl-or-die/smart-contract/contracts/HodlOrDie.sol": {
+      "lastModificationDate": 1764361781032,
+      "contentHash": "572eec68669d3e922b02f5d7ed617187",
+      "sourceName": "contracts/HodlOrDie.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "HodlOrDie"
+      ]
+    }
+  }
+}
