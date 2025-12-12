@@ -3,13 +3,16 @@ import { ethers } from "ethers";
 
 // ------------------ CONFIG ------------------
 
-const BACKEND_URL =
-  import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
 
+// ⚠️ senin kontrat
 const CONTRACT_ADDRESS = "0xeA2614aaaC15BBCC525836a5EEF7A17345cEfa74";
 
 const ENTRY_FEE_ETH = Number(import.meta.env.VITE_ENTRY_FEE_ETH || "0.0003");
 const RPC_URL = import.meta.env.VITE_BASE_RPC_URL || "";
+
+// Base Sepolia chainId = 84532 (0x14a34)
+const BASE_SEPOLIA_CHAIN_ID_HEX = "0x14a34";
 
 // On-chain read için ABI (pot & round)
 const READ_ABI = [
@@ -43,6 +46,45 @@ function pendingTxKey(addr, roundId) {
   return `hodl:entryTx:${(addr || "").toLowerCase()}:${roundId}`;
 }
 
+// tx hash yokken bile sebebi gösterelim:
+function parseWalletError(e) {
+  const code = e?.code || e?.error?.code;
+  const msg =
+    e?.shortMessage ||
+    e?.reason ||
+    e?.message ||
+    e?.error?.message ||
+    "Unknown error";
+
+  if (code === 4001) return "You rejected the transaction.";
+  if (String(msg).toLowerCase().includes("insufficient funds"))
+    return "Insufficient funds for gas.";
+  if (String(msg).toLowerCase().includes("user rejected"))
+    return "You rejected the transaction.";
+  if (String(msg).toLowerCase().includes("gas") && String(msg).toLowerCase().includes("estimate"))
+    return "Gas estimation failed (wrong network / contract reverted).";
+  if (String(msg).toLowerCase().includes("wrong network"))
+    return "Wrong network selected.";
+  return msg;
+}
+
+async function ensureBaseSepolia() {
+  if (!window.ethereum) return { ok: false, reason: "No wallet" };
+  const chainId = await window.ethereum.request({ method: "eth_chainId" });
+  if (chainId === BASE_SEPOLIA_CHAIN_ID_HEX) return { ok: true };
+
+  // otomatik switch dene
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: BASE_SEPOLIA_CHAIN_ID_HEX }]
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: "Please switch MetaMask to Base Sepolia." };
+  }
+}
+
 // ------------------ APP ------------------
 
 const App = () => {
@@ -58,10 +100,10 @@ const App = () => {
   const [holding, setHolding] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
 
-  const [hasEntry, setHasEntry] = useState(false); // bu deneme için entry alınmış mı?
+  const [hasEntry, setHasEntry] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
 
-  const [pendingScore, setPendingScore] = useState(null); // submit fail olursa retry için
+  const [pendingScore, setPendingScore] = useState(null);
 
   const holdStartRef = useRef(null);
   const intervalRef = useRef(null);
@@ -74,6 +116,14 @@ const App = () => {
         alert("Please install MetaMask.");
         return;
       }
+
+      // network kontrol (tx fail yüzdesini düşürür)
+      const net = await ensureBaseSepolia();
+      if (!net.ok) {
+        setStatus(net.reason);
+        return;
+      }
+
       const accounts = await window.ethereum.request({
         method: "eth_requestAccounts"
       });
@@ -82,17 +132,15 @@ const App = () => {
       }
     } catch (e) {
       console.error("connectWallet error", e);
+      setStatus(parseWalletError(e));
     }
   };
 
-  // Chain/account change
+  // accounts changed
   useEffect(() => {
     if (!window.ethereum) return;
 
-    const onAccounts = (accs) => {
-      setAccount(accs?.[0] || null);
-    };
-
+    const onAccounts = (accs) => setAccount(accs?.[0] || null);
     window.ethereum.on?.("accountsChanged", onAccounts);
 
     return () => {
@@ -120,9 +168,7 @@ const App = () => {
   const fetchLeaderboard = async (rId) => {
     try {
       const useRound = Number(rId || roundId);
-      const res = await fetch(
-        `${BACKEND_URL}/api/leaderboard?roundId=${useRound}`
-      );
+      const res = await fetch(`${BACKEND_URL}/api/leaderboard?roundId=${useRound}`);
       if (!res.ok) return;
       const data = await res.json();
       const list = Array.isArray(data) ? data : data.leaderboard || [];
@@ -132,7 +178,6 @@ const App = () => {
     }
   };
 
-  // initial + polling
   useEffect(() => {
     fetchPot();
     fetchLeaderboard();
@@ -147,17 +192,16 @@ const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // round veya account değişince localStorage’dan entry durumunu geri yükle
+  // localStorage hasEntry restore
   useEffect(() => {
     if (!account) {
       setHasEntry(false);
       return;
     }
-    const k = entryKey(account, roundId);
-    setHasEntry(localStorage.getItem(k) === "1");
+    setHasEntry(localStorage.getItem(entryKey(account, roundId)) === "1");
   }, [account, roundId]);
 
-  // ------------- ENTRY TX (HER DENEME İÇİN) -------------
+  // ------------- ENTRY TX -------------
 
   const sendEntryTx = async () => {
     try {
@@ -166,14 +210,20 @@ const App = () => {
         return false;
       }
 
-      // signer + address (state'e güvenmeyelim)
+      // yanlış network = tx fail’in en büyük sebebi
+      const net = await ensureBaseSepolia();
+      if (!net.ok) {
+        setStatus(net.reason);
+        return false;
+      }
+
+      setIsPaying(true);
+      setStatus("Sending entry transaction...");
+
       const browserProvider = new ethers.BrowserProvider(window.ethereum);
       const signer = await browserProvider.getSigner();
       const from = await signer.getAddress();
       if (!from) return false;
-
-      setIsPaying(true);
-      setStatus("Sending entry transaction...");
 
       const contract = new ethers.Contract(CONTRACT_ADDRESS, WRITE_ABI, signer);
 
@@ -181,13 +231,11 @@ const App = () => {
         value: ethers.parseEther(String(ENTRY_FEE_ETH))
       });
 
-      // pending tx hash’i sakla (refresh olursa bile)
       localStorage.setItem(pendingTxKey(from, roundId), tx.hash);
 
       setStatus("Waiting for confirmation...");
-      await tx.wait(); // ✅ mined olmadan hasEntry verme yok
+      await tx.wait(); // mined bekle
 
-      // entry hakkını aç
       setHasEntry(true);
       localStorage.setItem(entryKey(from, roundId), "1");
 
@@ -196,7 +244,7 @@ const App = () => {
       return true;
     } catch (e) {
       console.error("sendEntryTx error", e);
-      setStatus("Entry transaction failed or rejected.");
+      setStatus(`Payment failed: ${parseWalletError(e)}`);
       return false;
     } finally {
       setIsPaying(false);
@@ -231,14 +279,12 @@ const App = () => {
         return false;
       }
 
-      // başarılı submit → entry hakkı bu denemede kullanıldı → sıfırla
+      // submit başarılı → entry hakkını temizle
       localStorage.removeItem(entryKey(account, roundId));
       localStorage.removeItem(pendingTxKey(account, roundId));
       setHasEntry(false);
 
-      if (!bestScoreMs || scoreMs > bestScoreMs) {
-        setBestScoreMs(scoreMs);
-      }
+      if (!bestScoreMs || scoreMs > bestScoreMs) setBestScoreMs(scoreMs);
 
       setPendingScore(null);
       setStatus("Score submitted.");
@@ -267,16 +313,13 @@ const App = () => {
       return;
     }
 
-    // submit retry bekliyorsa önce onu çözsün
     if (pendingScore != null) return;
 
-    // Entry yoksa: önce ödeme al, timer BAŞLATMA
     if (!hasEntry) {
       if (isPaying) return;
       const ok = await sendEntryTx();
       if (!ok) return;
-      // ödeme onaylandı; kullanıcı ikinci basışta HODL başlatacak
-      return;
+      return; // ikinci basışta hodl
     }
 
     if (holding) return;
@@ -301,8 +344,6 @@ const App = () => {
     const finalMs = Date.now() - holdStartRef.current;
     setElapsedMs(0);
 
-    // ⚠️ Burada hasEntry’yi HEMEN false yapmıyoruz.
-    // submit başarılı olunca sıfırlıyoruz. (Render uyuyorsa entry yakılmasın.)
     await submitScore(finalMs);
   };
 
@@ -386,7 +427,7 @@ const App = () => {
                   color: "#6b7280"
                 }}
               >
-                Base (current network in wallet)
+                Base Sepolia enforced
               </div>
             </div>
           </header>
@@ -410,13 +451,7 @@ const App = () => {
               }}
             >
               <div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "#9ca3af",
-                    marginBottom: 4
-                  }}
-                >
+                <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
                   Current Pot
                 </div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: "#f97316" }}>
@@ -470,7 +505,11 @@ const App = () => {
                 height: 160,
                 borderRadius: 999,
                 border: "none",
-                cursor: isPaying ? "wait" : pendingScore != null ? "not-allowed" : "pointer",
+                cursor: isPaying
+                  ? "wait"
+                  : pendingScore != null
+                  ? "not-allowed"
+                  : "pointer",
                 fontSize: 22,
                 fontWeight: 800,
                 letterSpacing: "0.18em",
@@ -529,20 +568,12 @@ const App = () => {
                 color: "#6b7280"
               }}
             >
-              <span>Backend may sleep on free tier. Retry is safe.</span>
-              {bestScoreMs != null && (
-                <span>Your best: {formatMs(bestScoreMs)}</span>
-              )}
+              <span>Tx failures will show exact reason in Status.</span>
+              {bestScoreMs != null && <span>Your best: {formatMs(bestScoreMs)}</span>}
             </div>
 
             {status && (
-              <div
-                style={{
-                  marginTop: 10,
-                  fontSize: 11,
-                  color: "#9ca3af"
-                }}
-              >
+              <div style={{ marginTop: 10, fontSize: 11, color: "#9ca3af" }}>
                 Status: {status}
               </div>
             )}
@@ -574,31 +605,13 @@ const App = () => {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        paddingBottom: 6,
-                        borderBottom: "1px solid rgba(75,85,99,0.9)"
-                      }}
-                    >
+                    <th style={{ textAlign: "left", paddingBottom: 6, borderBottom: "1px solid rgba(75,85,99,0.9)" }}>
                       #
                     </th>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        paddingBottom: 6,
-                        borderBottom: "1px solid rgba(75,85,99,0.9)"
-                      }}
-                    >
+                    <th style={{ textAlign: "left", paddingBottom: 6, borderBottom: "1px solid rgba(75,85,99,0.9)" }}>
                       Player
                     </th>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        paddingBottom: 6,
-                        borderBottom: "1px solid rgba(75,85,99,0.9)"
-                      }}
-                    >
+                    <th style={{ textAlign: "left", paddingBottom: 6, borderBottom: "1px solid rgba(75,85,99,0.9)" }}>
                       Best HODL
                     </th>
                   </tr>
@@ -608,9 +621,7 @@ const App = () => {
                     <tr key={`${row.wallet}-${idx}`}>
                       <td style={{ padding: "4px 0" }}>{idx + 1}</td>
                       <td style={{ padding: "4px 0" }}>{shorten(row.wallet)}</td>
-                      <td style={{ padding: "4px 0" }}>
-                        {formatMs(row.bestScoreMs)}
-                      </td>
+                      <td style={{ padding: "4px 0" }}>{formatMs(row.bestScoreMs)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -618,15 +629,8 @@ const App = () => {
             )}
           </div>
 
-          <div
-            style={{
-              marginTop: 8,
-              fontSize: 10,
-              color: "#6b7280"
-            }}
-          >
-            Scores are tracked off-chain for MVP. Payout can be triggered by backend
-            when pot reaches threshold.
+          <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280" }}>
+            Scores are tracked off-chain for MVP. Payout can be triggered by backend when pot reaches threshold.
           </div>
         </div>
       </div>
