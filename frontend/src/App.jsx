@@ -9,7 +9,6 @@ const BACKEND_URL =
 const CONTRACT_ADDRESS = "0xeA2614aaaC15BBCC525836a5EEF7A17345cEfa74";
 
 const ENTRY_FEE_ETH = Number(import.meta.env.VITE_ENTRY_FEE_ETH || "0.0003");
-
 const RPC_URL = import.meta.env.VITE_BASE_RPC_URL || "";
 
 // On-chain read için ABI (pot & round)
@@ -36,6 +35,14 @@ function shorten(addr) {
   return addr.slice(0, 6) + "..." + addr.slice(-4);
 }
 
+function entryKey(addr, roundId) {
+  return `hodl:hasEntry:${(addr || "").toLowerCase()}:${roundId}`;
+}
+
+function pendingTxKey(addr, roundId) {
+  return `hodl:entryTx:${(addr || "").toLowerCase()}:${roundId}`;
+}
+
 // ------------------ APP ------------------
 
 const App = () => {
@@ -53,6 +60,8 @@ const App = () => {
 
   const [hasEntry, setHasEntry] = useState(false); // bu deneme için entry alınmış mı?
   const [isPaying, setIsPaying] = useState(false);
+
+  const [pendingScore, setPendingScore] = useState(null); // submit fail olursa retry için
 
   const holdStartRef = useRef(null);
   const intervalRef = useRef(null);
@@ -76,6 +85,21 @@ const App = () => {
     }
   };
 
+  // Chain/account change
+  useEffect(() => {
+    if (!window.ethereum) return;
+
+    const onAccounts = (accs) => {
+      setAccount(accs?.[0] || null);
+    };
+
+    window.ethereum.on?.("accountsChanged", onAccounts);
+
+    return () => {
+      window.ethereum.removeListener?.("accountsChanged", onAccounts);
+    };
+  }, []);
+
   // ------------- POT (ON-CHAIN READ) -------------
 
   const fetchPot = async () => {
@@ -93,14 +117,14 @@ const App = () => {
 
   // ------------- LEADERBOARD (BACKEND) -------------
 
-  const fetchLeaderboard = async () => {
+  const fetchLeaderboard = async (rId) => {
     try {
+      const useRound = Number(rId || roundId);
       const res = await fetch(
-        `${BACKEND_URL}/api/leaderboard?roundId=${roundId}`
+        `${BACKEND_URL}/api/leaderboard?roundId=${useRound}`
       );
       if (!res.ok) return;
       const data = await res.json();
-      console.log("leaderboard response:", data);
       const list = Array.isArray(data) ? data : data.leaderboard || [];
       setLeaderboard(list);
     } catch (e) {
@@ -108,55 +132,67 @@ const App = () => {
     }
   };
 
+  // initial + polling
   useEffect(() => {
     fetchPot();
     fetchLeaderboard();
-    const potInt = setInterval(fetchPot, 20000);
-    const lbInt = setInterval(fetchLeaderboard, 20000);
+
+    const potInt = setInterval(fetchPot, 15000);
+    const lbInt = setInterval(() => fetchLeaderboard(), 15000);
+
     return () => {
       clearInterval(potInt);
       clearInterval(lbInt);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // round veya account değişince localStorage’dan entry durumunu geri yükle
+  useEffect(() => {
+    if (!account) {
+      setHasEntry(false);
+      return;
+    }
+    const k = entryKey(account, roundId);
+    setHasEntry(localStorage.getItem(k) === "1");
+  }, [account, roundId]);
 
   // ------------- ENTRY TX (HER DENEME İÇİN) -------------
 
   const sendEntryTx = async () => {
     try {
       if (!window.ethereum) {
-        alert("No wallet found.");
+        alert("Please install MetaMask.");
         return false;
       }
-      if (!account) {
-        await connectWallet();
-        if (!account) return false;
-      }
+
+      // signer + address (state'e güvenmeyelim)
+      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await browserProvider.getSigner();
+      const from = await signer.getAddress();
+      if (!from) return false;
 
       setIsPaying(true);
       setStatus("Sending entry transaction...");
 
-      const iface = new ethers.Interface(WRITE_ABI);
-      const data = iface.encodeFunctionData("joinCurrentRound", []);
-      const valueWei = ethers.toBeHex(
-        ethers.parseEther(ENTRY_FEE_ETH.toString())
-      );
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, WRITE_ABI, signer);
 
-      const txHash = await window.ethereum.request({
-        method: "eth_sendTransaction",
-        params: [
-          {
-            from: account,
-            to: CONTRACT_ADDRESS,
-            value: valueWei,
-            data
-          }
-        ]
+      const tx = await contract.joinCurrentRound({
+        value: ethers.parseEther(String(ENTRY_FEE_ETH))
       });
 
-      console.log("entry txHash:", txHash);
-      setStatus("Entry confirmed. Press & HODL to play.");
-      setHasEntry(true); // BU DENEME İÇİN ENTRY ALINDI
-      fetchPot(); // pot'u güncelle
+      // pending tx hash’i sakla (refresh olursa bile)
+      localStorage.setItem(pendingTxKey(from, roundId), tx.hash);
+
+      setStatus("Waiting for confirmation...");
+      await tx.wait(); // ✅ mined olmadan hasEntry verme yok
+
+      // entry hakkını aç
+      setHasEntry(true);
+      localStorage.setItem(entryKey(from, roundId), "1");
+
+      setStatus("Entry confirmed. Now HODL.");
+      fetchPot();
       return true;
     } catch (e) {
       console.error("sendEntryTx error", e);
@@ -165,6 +201,60 @@ const App = () => {
     } finally {
       setIsPaying(false);
     }
+  };
+
+  // ------------- SUBMIT SCORE -------------
+
+  const submitScore = async (scoreMs) => {
+    if (!account) return false;
+
+    setStatus("Submitting score...");
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/submit-score`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roundId,
+          wallet: account,
+          walletAddress: account,
+          scoreMs
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      console.log("submit-score response:", data);
+
+      if (!res.ok) {
+        setStatus("Backend error while submitting score. You can retry.");
+        setPendingScore(scoreMs);
+        return false;
+      }
+
+      // başarılı submit → entry hakkı bu denemede kullanıldı → sıfırla
+      localStorage.removeItem(entryKey(account, roundId));
+      localStorage.removeItem(pendingTxKey(account, roundId));
+      setHasEntry(false);
+
+      if (!bestScoreMs || scoreMs > bestScoreMs) {
+        setBestScoreMs(scoreMs);
+      }
+
+      setPendingScore(null);
+      setStatus("Score submitted.");
+      fetchLeaderboard(roundId);
+      return true;
+    } catch (e) {
+      console.error("submit-score error", e);
+      setStatus("Submit failed (backend sleeping?). You can retry.");
+      setPendingScore(scoreMs);
+      return false;
+    }
+  };
+
+  const retrySubmit = async () => {
+    if (pendingScore == null) return;
+    await submitScore(pendingScore);
   };
 
   // ------------- HODL LOGIC -------------
@@ -177,12 +267,15 @@ const App = () => {
       return;
     }
 
-    // Entry yoksa: önce para al, timer BAŞLATMA
+    // submit retry bekliyorsa önce onu çözsün
+    if (pendingScore != null) return;
+
+    // Entry yoksa: önce ödeme al, timer BAŞLATMA
     if (!hasEntry) {
-      if (isPaying) return; // spam engelle
+      if (isPaying) return;
       const ok = await sendEntryTx();
       if (!ok) return;
-      // Kullanıcı ikinci basışta oyuna girecek
+      // ödeme onaylandı; kullanıcı ikinci basışta HODL başlatacak
       return;
     }
 
@@ -208,41 +301,9 @@ const App = () => {
     const finalMs = Date.now() - holdStartRef.current;
     setElapsedMs(0);
 
-    // 🔴 Her oyun bittikten sonra bu denemelik entry hakkını SIFIRLA
-    setHasEntry(false);
-
-    setStatus("Submitting score...");
-
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/submit-score`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          roundId,
-          wallet: account,         // eski isim
-          walletAddress: account,  // yeni isim
-          scoreMs: finalMs
-        })
-      });
-
-      const data = await res.json();
-      console.log("submit-score response:", data);
-
-      if (!res.ok) {
-        setStatus("Backend error while submitting score.");
-        return;
-      }
-
-      if (!bestScoreMs || finalMs > bestScoreMs) {
-        setBestScoreMs(finalMs);
-      }
-
-      setStatus("Score submitted.");
-      fetchLeaderboard();
-    } catch (e) {
-      console.error("submit-score error", e);
-      setStatus("Failed to submit score.");
-    }
+    // ⚠️ Burada hasEntry’yi HEMEN false yapmıyoruz.
+    // submit başarılı olunca sıfırlıyoruz. (Render uyuyorsa entry yakılmasın.)
+    await submitScore(finalMs);
   };
 
   // ------------- UI -------------
@@ -295,9 +356,10 @@ const App = () => {
                 <span style={{ color: "#f97316" }}>OR DIE</span>
               </div>
               <div style={{ fontSize: 13, color: "#9ca3af" }}>
-                Hold the button. Longest degen of the week wins the pot.
+                Pay, then hold the button. Longest degen wins the pot.
               </div>
             </div>
+
             <div style={{ textAlign: "right" }}>
               <button
                 onClick={connectWallet}
@@ -324,7 +386,7 @@ const App = () => {
                   color: "#6b7280"
                 }}
               >
-                Weekly pot game (Base Sepolia)
+                Base (current network in wallet)
               </div>
             </div>
           </header>
@@ -355,7 +417,7 @@ const App = () => {
                     marginBottom: 4
                   }}
                 >
-                  Current Weekly Pot
+                  Current Pot
                 </div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: "#f97316" }}>
                   {Number(potEth || "0").toFixed(4)} ETH
@@ -401,14 +463,14 @@ const App = () => {
               onMouseLeave={stopHolding}
               onTouchStart={startHolding}
               onTouchEnd={stopHolding}
-              disabled={isPaying}
+              disabled={isPaying || pendingScore != null}
               style={{
                 marginTop: 18,
                 width: "100%",
                 height: 160,
                 borderRadius: 999,
                 border: "none",
-                cursor: isPaying ? "wait" : "pointer",
+                cursor: isPaying ? "wait" : pendingScore != null ? "not-allowed" : "pointer",
                 fontSize: 22,
                 fontWeight: 800,
                 letterSpacing: "0.18em",
@@ -426,7 +488,9 @@ const App = () => {
                   "transform 0.08s ease-out, box-shadow 0.08s ease-out, background 0.15s ease-out, opacity 0.1s"
               }}
             >
-              {hasEntry
+              {pendingScore != null
+                ? "SUBMIT PENDING"
+                : hasEntry
                 ? holding
                   ? "DON'T LET GO"
                   : "HODL"
@@ -434,6 +498,27 @@ const App = () => {
                 ? "PAYING..."
                 : "PAY & HODL"}
             </button>
+
+            {pendingScore != null && (
+              <button
+                onClick={retrySubmit}
+                style={{
+                  marginTop: 10,
+                  width: "100%",
+                  padding: "10px 14px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(148,163,184,0.4)",
+                  background: "rgba(2,6,23,0.6)",
+                  color: "#e5e7eb",
+                  fontSize: 12,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  cursor: "pointer"
+                }}
+              >
+                Retry submit
+              </button>
+            )}
 
             <div
               style={{
@@ -444,7 +529,7 @@ const App = () => {
                 color: "#6b7280"
               }}
             >
-              <span>Round ends every Monday 00:00 (UTC).</span>
+              <span>Backend may sleep on free tier. Retry is safe.</span>
               {bestScoreMs != null && (
                 <span>Your best: {formatMs(bestScoreMs)}</span>
               )}
@@ -467,7 +552,7 @@ const App = () => {
         {/* RIGHT: LEADERBOARD */}
         <div>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
-            Weekly Leaderboard
+            Leaderboard
           </div>
           <div
             style={{
@@ -486,9 +571,7 @@ const App = () => {
                 No scores yet. Be the first degen to HODL.
               </div>
             ) : (
-              <table
-                style={{ width: "100%", borderCollapse: "collapse" }}
-              >
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
                     <th
@@ -524,9 +607,7 @@ const App = () => {
                   {leaderboard.map((row, idx) => (
                     <tr key={`${row.wallet}-${idx}`}>
                       <td style={{ padding: "4px 0" }}>{idx + 1}</td>
-                      <td style={{ padding: "4px 0" }}>
-                        {shorten(row.wallet)}
-                      </td>
+                      <td style={{ padding: "4px 0" }}>{shorten(row.wallet)}</td>
                       <td style={{ padding: "4px 0" }}>
                         {formatMs(row.bestScoreMs)}
                       </td>
@@ -536,6 +617,7 @@ const App = () => {
               </table>
             )}
           </div>
+
           <div
             style={{
               marginTop: 8,
@@ -543,8 +625,8 @@ const App = () => {
               color: "#6b7280"
             }}
           >
-            Scores are tracked off-chain for MVP. Weekly winners can be
-            finalized on-chain from the backend.
+            Scores are tracked off-chain for MVP. Payout can be triggered by backend
+            when pot reaches threshold.
           </div>
         </div>
       </div>
