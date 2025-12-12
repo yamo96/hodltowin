@@ -63,7 +63,7 @@ export default function HoldButton({
         }}
       >
         {label}
-        {!hasEntry && !isPaying && pendingScore == null ? ` (${(Number.isFinite(label) ? "" : "")}${""}${""}` : ""}
+        
       </button>
 
       <div

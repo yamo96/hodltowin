@@ -19,7 +19,7 @@ html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
 
 .page{min-height:100vh;padding:18px}
-.shell{max-width:980px;margin:0 auto}
+.shell{max-width:1180px;margin:0 auto}
 
 .topbar{
   display:flex;
@@ -164,7 +164,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 @media (min-width: 900px){
   .page{padding:28px}
   .brandTitle{font-size:26px}
-  .grid{grid-template-columns: 1.2fr 0.8fr; gap:16px}
+  .grid{grid-template-columns: 1.35fr 0.8fr; gap:18px}
   .card{padding:18px;border-radius:22px}
   .timer{font-size:46px}
 }

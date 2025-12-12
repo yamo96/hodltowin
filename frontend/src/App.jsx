@@ -400,7 +400,7 @@ export default function App() {
         </main>
 
         <footer className="footerNote">
-          Green = win. Red = panic. Off-chain scores for MVP.
+          Scores: off-chain (for now). Pot: on-chain.
         </footer>
       </div>
 
