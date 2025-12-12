@@ -243,12 +243,27 @@ const App = () => {
       fetchPot();
       return true;
     } catch (e) {
-      console.error("sendEntryTx error", e);
-      setStatus(`Payment failed: ${parseWalletError(e)}`);
-      return false;
-    } finally {
-      setIsPaying(false);
-    }
+  console.error("sendEntryTx error", e);
+  const code = e?.code || e?.error?.code;
+  const msg =
+    e?.shortMessage ||
+    e?.reason ||
+    e?.message ||
+    e?.error?.message ||
+    "Unknown error";
+
+  // MetaMask reject
+  if (code === 4001) {
+    setStatus("Payment failed: You rejected the transaction.");
+    return false;
+  }
+
+  setStatus(`Payment failed: ${msg}`);
+  return false;
+} finally {
+  setIsPaying(false);
+}
+
   };
 
   // ------------- SUBMIT SCORE -------------
