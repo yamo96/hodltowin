@@ -1,28 +1,27 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
+import "./App.css";
 
-// ------------------ CONFIG ------------------
+import PotPanel from "./components/PotPanel";
+import HoldButton from "./components/HoldButton";
+import Leaderboard from "./components/Leaderboard";
+import RulesModal from "./components/RulesModal";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
-
-// ⚠️ senin kontrat
 const CONTRACT_ADDRESS = "0xeA2614aaaC15BBCC525836a5EEF7A17345cEfa74";
 
 const ENTRY_FEE_ETH = Number(import.meta.env.VITE_ENTRY_FEE_ETH || "0.0003");
 const RPC_URL = import.meta.env.VITE_BASE_RPC_URL || "";
 
+const TARGET_POT_ETH = 0.1;
+
 // Base Sepolia chainId = 84532 (0x14a34)
 const BASE_SEPOLIA_CHAIN_ID_HEX = "0x14a34";
 
-// On-chain read için ABI (pot & round)
 const READ_ABI = [
   "function getCurrentRoundInfo() view returns (uint256 id, uint256 pot, uint256 start, uint256 end, bool finalized)"
 ];
-
-// joinCurrentRound için minimal ABI
 const WRITE_ABI = ["function joinCurrentRound() external payable"];
-
-// ------------------ HELPERS ------------------
 
 function formatMs(ms) {
   if (!ms || ms <= 0) return "00:00.00";
@@ -32,62 +31,51 @@ function formatMs(ms) {
   const c = String(centis).padStart(2, "0");
   return `${s}:${c}`;
 }
-
 function shorten(addr) {
   if (!addr) return "";
   return addr.slice(0, 6) + "..." + addr.slice(-4);
 }
-
 function entryKey(addr, roundId) {
   return `hodl:hasEntry:${(addr || "").toLowerCase()}:${roundId}`;
 }
-
 function pendingTxKey(addr, roundId) {
   return `hodl:entryTx:${(addr || "").toLowerCase()}:${roundId}`;
 }
-
-// tx hash yokken bile sebebi gösterelim:
 function parseWalletError(e) {
   const code = e?.code || e?.error?.code;
-  const msg =
+  const inner =
+    e?.error?.message ||
+    e?.error?.data?.message ||
+    e?.data?.message ||
+    (Array.isArray(e?.errors) && (e.errors[0]?.message || e.errors[0]?.shortMessage)) ||
     e?.shortMessage ||
     e?.reason ||
     e?.message ||
-    e?.error?.message ||
     "Unknown error";
 
   if (code === 4001) return "You rejected the transaction.";
-  if (String(msg).toLowerCase().includes("insufficient funds"))
+  if (String(inner).toLowerCase().includes("insufficient funds"))
     return "Insufficient funds for gas.";
-  if (String(msg).toLowerCase().includes("user rejected"))
-    return "You rejected the transaction.";
-  if (String(msg).toLowerCase().includes("gas") && String(msg).toLowerCase().includes("estimate"))
+  if (String(inner).toLowerCase().includes("estimategas"))
     return "Gas estimation failed (wrong network / contract reverted).";
-  if (String(msg).toLowerCase().includes("wrong network"))
-    return "Wrong network selected.";
-  return msg;
+  return inner;
 }
-
 async function ensureBaseSepolia() {
-  if (!window.ethereum) return { ok: false, reason: "No wallet" };
+  if (!window.ethereum) return { ok: false, reason: "No wallet found." };
   const chainId = await window.ethereum.request({ method: "eth_chainId" });
   if (chainId === BASE_SEPOLIA_CHAIN_ID_HEX) return { ok: true };
-
-  // otomatik switch dene
   try {
     await window.ethereum.request({
       method: "wallet_switchEthereumChain",
       params: [{ chainId: BASE_SEPOLIA_CHAIN_ID_HEX }]
     });
     return { ok: true };
-  } catch (e) {
+  } catch {
     return { ok: false, reason: "Please switch MetaMask to Base Sepolia." };
   }
 }
 
-// ------------------ APP ------------------
-
-const App = () => {
+export default function App() {
   const [account, setAccount] = useState(null);
 
   const [roundId, setRoundId] = useState(1);
@@ -104,52 +92,39 @@ const App = () => {
   const [isPaying, setIsPaying] = useState(false);
 
   const [pendingScore, setPendingScore] = useState(null);
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   const holdStartRef = useRef(null);
   const intervalRef = useRef(null);
 
-  // ------------- WALLET -------------
-
+  // ---------- wallet connect ----------
   const connectWallet = async () => {
     try {
-      if (!window.ethereum) {
-        alert("Please install MetaMask.");
-        return;
-      }
+      if (!window.ethereum) return alert("Please install MetaMask.");
 
-      // network kontrol (tx fail yüzdesini düşürür)
       const net = await ensureBaseSepolia();
-      if (!net.ok) {
-        setStatus(net.reason);
-        return;
-      }
+      if (!net.ok) return setStatus(net.reason);
 
-      const accounts = await window.ethereum.request({
-        method: "eth_requestAccounts"
-      });
-      if (accounts && accounts.length > 0) {
-        setAccount(accounts[0]);
-      }
+      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      setAccount(accounts?.[0] || null);
+      setStatus("");
     } catch (e) {
-      console.error("connectWallet error", e);
+      console.error(e);
       setStatus(parseWalletError(e));
     }
   };
 
-  // accounts changed
+  // account change
   useEffect(() => {
     if (!window.ethereum) return;
 
     const onAccounts = (accs) => setAccount(accs?.[0] || null);
     window.ethereum.on?.("accountsChanged", onAccounts);
 
-    return () => {
-      window.ethereum.removeListener?.("accountsChanged", onAccounts);
-    };
+    return () => window.ethereum.removeListener?.("accountsChanged", onAccounts);
   }, []);
 
-  // ------------- POT (ON-CHAIN READ) -------------
-
+  // ---------- reads ----------
   const fetchPot = async () => {
     try {
       if (!RPC_URL || !CONTRACT_ADDRESS) return;
@@ -162,8 +137,6 @@ const App = () => {
       console.error("fetchPot error", e);
     }
   };
-
-  // ------------- LEADERBOARD (BACKEND) -------------
 
   const fetchLeaderboard = async (rId) => {
     try {
@@ -182,8 +155,8 @@ const App = () => {
     fetchPot();
     fetchLeaderboard();
 
-    const potInt = setInterval(fetchPot, 15000);
-    const lbInt = setInterval(() => fetchLeaderboard(), 15000);
+    const potInt = setInterval(fetchPot, 12000);
+    const lbInt = setInterval(() => fetchLeaderboard(), 12000);
 
     return () => {
       clearInterval(potInt);
@@ -192,25 +165,21 @@ const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // localStorage hasEntry restore
+  // restore hasEntry per round
   useEffect(() => {
-    if (!account) {
-      setHasEntry(false);
-      return;
-    }
+    if (!account) return setHasEntry(false);
     setHasEntry(localStorage.getItem(entryKey(account, roundId)) === "1");
   }, [account, roundId]);
 
-  // ------------- ENTRY TX -------------
-
+  // ---------- entry tx ----------
   const sendEntryTx = async () => {
     try {
       if (!window.ethereum) {
         alert("Please install MetaMask.");
         return false;
       }
+      if (isPaying) return false;
 
-      // yanlış network = tx fail’in en büyük sebebi
       const net = await ensureBaseSepolia();
       if (!net.ok) {
         setStatus(net.reason);
@@ -226,7 +195,6 @@ const App = () => {
       if (!from) return false;
 
       const contract = new ethers.Contract(CONTRACT_ADDRESS, WRITE_ABI, signer);
-
       const tx = await contract.joinCurrentRound({
         value: ethers.parseEther(String(ENTRY_FEE_ETH))
       });
@@ -234,7 +202,7 @@ const App = () => {
       localStorage.setItem(pendingTxKey(from, roundId), tx.hash);
 
       setStatus("Waiting for confirmation...");
-      await tx.wait(); // mined bekle
+      await tx.wait();
 
       setHasEntry(true);
       localStorage.setItem(entryKey(from, roundId), "1");
@@ -243,31 +211,15 @@ const App = () => {
       fetchPot();
       return true;
     } catch (e) {
-  console.error("sendEntryTx error", e);
-  const code = e?.code || e?.error?.code;
-  const msg =
-    e?.shortMessage ||
-    e?.reason ||
-    e?.message ||
-    e?.error?.message ||
-    "Unknown error";
-
-  // MetaMask reject
-  if (code === 4001) {
-    setStatus("Payment failed: You rejected the transaction.");
-    return false;
-  }
-
-  setStatus(`Payment failed: ${msg}`);
-  return false;
-} finally {
-  setIsPaying(false);
-}
-
+      console.error("sendEntryTx error", e);
+      setStatus(`Payment failed: ${parseWalletError(e)}`);
+      return false;
+    } finally {
+      setIsPaying(false);
+    }
   };
 
-  // ------------- SUBMIT SCORE -------------
-
+  // ---------- submit score ----------
   const submitScore = async (scoreMs) => {
     if (!account) return false;
 
@@ -294,7 +246,6 @@ const App = () => {
         return false;
       }
 
-      // submit başarılı → entry hakkını temizle
       localStorage.removeItem(entryKey(account, roundId));
       localStorage.removeItem(pendingTxKey(account, roundId));
       setHasEntry(false);
@@ -307,7 +258,7 @@ const App = () => {
       return true;
     } catch (e) {
       console.error("submit-score error", e);
-      setStatus("Submit failed (backend sleeping?). You can retry.");
+      setStatus("Submit failed. You can retry.");
       setPendingScore(scoreMs);
       return false;
     }
@@ -318,23 +269,19 @@ const App = () => {
     await submitScore(pendingScore);
   };
 
-  // ------------- HODL LOGIC -------------
-
+  // ---------- hold logic ----------
   const startHolding = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
+    e?.preventDefault?.();
 
-    if (!account) {
-      await connectWallet();
-      return;
-    }
-
+    if (isPaying) return;
+    if (!account) return connectWallet();
     if (pendingScore != null) return;
 
     if (!hasEntry) {
-      if (isPaying) return;
       const ok = await sendEntryTx();
       if (!ok) return;
-      return; // ikinci basışta hodl
+      // user will press again to start hold
+      return;
     }
 
     if (holding) return;
@@ -350,7 +297,7 @@ const App = () => {
   };
 
   const stopHolding = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
+    e?.preventDefault?.();
     if (!holding) return;
 
     setHolding(false);
@@ -362,295 +309,107 @@ const App = () => {
     await submitScore(finalMs);
   };
 
-  // ------------- UI -------------
+  // derived UI
+  const potNum = Number(potEth || "0");
+  const leftToTarget = Math.max(0, TARGET_POT_ETH - potNum);
+  const progress = Math.max(0, Math.min(1, potNum / TARGET_POT_ETH));
+
+  // rank highlight
+  const yourIndex = account
+    ? leaderboard.findIndex((r) => (r.wallet || "").toLowerCase() === account.toLowerCase())
+    : -1;
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#020617",
-        color: "#f9fafb",
-        fontFamily:
-          '-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif',
-        padding: 32,
-        boxSizing: "border-box"
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 960,
-          margin: "0 auto",
-          background: "#020617",
-          borderRadius: 24,
-          border: "1px solid rgba(148,163,184,0.4)",
-          padding: "24px 24px 20px",
-          boxShadow: "0 22px 60px rgba(0,0,0,0.7)",
-          display: "grid",
-          gridTemplateColumns: "minmax(0,2fr) minmax(0,1.4fr)",
-          gap: 24
-        }}
-      >
-        {/* LEFT SIDE */}
-        <div>
-          <header
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 20
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  fontSize: 26,
-                  fontWeight: 800,
-                  letterSpacing: "0.16em"
-                }}
-              >
-                <span>HODL </span>
-                <span style={{ color: "#f97316" }}>OR DIE</span>
-              </div>
-              <div style={{ fontSize: 13, color: "#9ca3af" }}>
-                Pay, then hold the button. Longest degen wins the pot.
-              </div>
+    <div className="page">
+      <div className="shell">
+        <header className="topbar">
+          <div className="brand">
+            <div className="brandTitle">
+              HODL <span className="brandWin">TO WIN</span>
             </div>
+            <div className="brandSub">Pay. Hold. Win the pot.</div>
+          </div>
 
-            <div style={{ textAlign: "right" }}>
-              <button
-                onClick={connectWallet}
-                style={{
-                  padding: "6px 14px",
-                  borderRadius: 999,
-                  border: "1px solid rgba(148,163,184,0.8)",
-                  background: "transparent",
-                  color: "#e5e7eb",
-                  fontSize: 12,
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase",
-                  cursor: "pointer"
-                }}
-              >
-                {account ? shorten(account) : "CONNECT"}
-              </button>
-              <div
-                style={{
-                  marginTop: 6,
-                  fontSize: 10,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.16em",
-                  color: "#6b7280"
-                }}
-              >
-                Base Sepolia enforced
-              </div>
-            </div>
-          </header>
-
-          <div
-            style={{
-              background:
-                "radial-gradient(circle at top,#111827,#020617 60%,#000 100%)",
-              borderRadius: 20,
-              border: "1px solid rgba(148,163,184,0.4)",
-              padding: "18px 20px 20px"
-            }}
-          >
-            {/* Pot + Entry */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 12
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                  Current Pot
-                </div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: "#f97316" }}>
-                  {Number(potEth || "0").toFixed(4)} ETH
-                </div>
-              </div>
-              <div style={{ textAlign: "right", fontSize: 12 }}>
-                <div style={{ color: "#9ca3af", marginBottom: 4 }}>
-                  Entry per attempt
-                </div>
-                <div style={{ fontWeight: 600 }}>{ENTRY_FEE_ETH} ETH</div>
-                <div style={{ color: "#6b7280", fontSize: 11 }}>
-                  Round #{roundId}
-                </div>
-              </div>
-            </div>
-
-            {/* Timer */}
-            <div
-              style={{
-                textAlign: "center",
-                fontSize: 40,
-                fontVariantNumeric: "tabular-nums",
-                marginBottom: 4
-              }}
-            >
-              {formatMs(elapsedMs)}
-            </div>
-            <div
-              style={{
-                textAlign: "center",
-                fontSize: 11,
-                color: "#9ca3af",
-                letterSpacing: "0.2em"
-              }}
-            >
-              CURRENT ATTEMPT
-            </div>
-
-            {/* HODL BUTTON */}
-            <button
-              onMouseDown={startHolding}
-              onMouseUp={stopHolding}
-              onMouseLeave={stopHolding}
-              onTouchStart={startHolding}
-              onTouchEnd={stopHolding}
-              disabled={isPaying || pendingScore != null}
-              style={{
-                marginTop: 18,
-                width: "100%",
-                height: 160,
-                borderRadius: 999,
-                border: "none",
-                cursor: isPaying
-                  ? "wait"
-                  : pendingScore != null
-                  ? "not-allowed"
-                  : "pointer",
-                fontSize: 22,
-                fontWeight: 800,
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                background: holding
-                  ? "radial-gradient(circle at bottom,#b91c1c,#450a0a)"
-                  : "radial-gradient(circle at top,#ef4444,#7f1d1d)",
-                color: "#f9fafb",
-                boxShadow: holding
-                  ? "0 6px 24px rgba(127,29,29,0.7)"
-                  : "0 12px 40px rgba(239,68,68,0.6)",
-                transform: holding ? "translateY(4px)" : "translateY(0)",
-                opacity: isPaying ? 0.6 : 1,
-                transition:
-                  "transform 0.08s ease-out, box-shadow 0.08s ease-out, background 0.15s ease-out, opacity 0.1s"
-              }}
-            >
-              {pendingScore != null
-                ? "SUBMIT PENDING"
-                : hasEntry
-                ? holding
-                  ? "DON'T LET GO"
-                  : "HODL"
-                : isPaying
-                ? "PAYING..."
-                : "PAY & HODL"}
+          <div className="topActions">
+            <button className="ghostBtn" onClick={() => setRulesOpen(true)}>
+              RULES
             </button>
+            <button className="pillBtn" onClick={connectWallet}>
+              {account ? shorten(account) : "CONNECT"}
+            </button>
+            <div className="liveLine">
+              <span className="liveDot" /> LIVE
+            </div>
+          </div>
+        </header>
+
+        <main className="grid">
+          {/* LEFT */}
+          <section className="card">
+            <PotPanel
+              potEth={potNum}
+              targetEth={TARGET_POT_ETH}
+              leftEth={leftToTarget}
+              progress={progress}
+              entryFeeEth={ENTRY_FEE_ETH}
+              roundId={roundId}
+            />
+
+            <div className="timerWrap">
+              <div className={`timer ${holding ? "timerHolding" : ""}`}>
+                {formatMs(elapsedMs)}
+              </div>
+              <div className="timerLabel">CURRENT ATTEMPT</div>
+            </div>
+
+            <HoldButton
+              holding={holding}
+              hasEntry={hasEntry}
+              isPaying={isPaying}
+              pendingScore={pendingScore}
+              onPointerDown={startHolding}
+              onPointerUp={stopHolding}
+              onPointerLeave={stopHolding}
+            />
 
             {pendingScore != null && (
-              <button
-                onClick={retrySubmit}
-                style={{
-                  marginTop: 10,
-                  width: "100%",
-                  padding: "10px 14px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(148,163,184,0.4)",
-                  background: "rgba(2,6,23,0.6)",
-                  color: "#e5e7eb",
-                  fontSize: 12,
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase",
-                  cursor: "pointer"
-                }}
-              >
+              <button className="secondaryBtn" onClick={retrySubmit}>
                 Retry submit
               </button>
             )}
 
-            <div
-              style={{
-                marginTop: 14,
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: 11,
-                color: "#6b7280"
-              }}
-            >
-              <span>Tx failures will show exact reason in Status.</span>
-              {bestScoreMs != null && <span>Your best: {formatMs(bestScoreMs)}</span>}
-            </div>
-
-            {status && (
-              <div style={{ marginTop: 10, fontSize: 11, color: "#9ca3af" }}>
-                Status: {status}
+            {bestScoreMs != null && (
+              <div className="hintRow">
+                <span className="hintMuted">Your best</span>
+                <span className="hintStrong">{formatMs(bestScoreMs)}</span>
               </div>
             )}
-          </div>
-        </div>
 
-        {/* RIGHT: LEADERBOARD */}
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
-            Leaderboard
-          </div>
-          <div
-            style={{
-              background:
-                "radial-gradient(circle at top,#020617,#020617 60%,#000 100%)",
-              borderRadius: 20,
-              border: "1px solid rgba(148,163,184,0.4)",
-              padding: 14,
-              maxHeight: 360,
-              overflow: "auto",
-              fontSize: 12
-            }}
-          >
-            {leaderboard.length === 0 ? (
-              <div style={{ color: "#6b7280" }}>
-                No scores yet. Be the first degen to HODL.
-              </div>
-            ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left", paddingBottom: 6, borderBottom: "1px solid rgba(75,85,99,0.9)" }}>
-                      #
-                    </th>
-                    <th style={{ textAlign: "left", paddingBottom: 6, borderBottom: "1px solid rgba(75,85,99,0.9)" }}>
-                      Player
-                    </th>
-                    <th style={{ textAlign: "left", paddingBottom: 6, borderBottom: "1px solid rgba(75,85,99,0.9)" }}>
-                      Best HODL
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leaderboard.map((row, idx) => (
-                    <tr key={`${row.wallet}-${idx}`}>
-                      <td style={{ padding: "4px 0" }}>{idx + 1}</td>
-                      <td style={{ padding: "4px 0" }}>{shorten(row.wallet)}</td>
-                      <td style={{ padding: "4px 0" }}>{formatMs(row.bestScoreMs)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+            {status && <div className="status">Status: {status}</div>}
+          </section>
 
-          <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280" }}>
-            Scores are tracked off-chain for MVP. Payout can be triggered by backend when pot reaches threshold.
-          </div>
-        </div>
+          {/* RIGHT */}
+          <section className="card">
+            <Leaderboard
+              leaderboard={leaderboard}
+              yourIndex={yourIndex}
+              formatMs={formatMs}
+              shorten={shorten}
+            />
+          </section>
+        </main>
+
+        <footer className="footerNote">
+          Green = win. Red = panic. Off-chain scores for MVP.
+        </footer>
       </div>
+
+      <RulesModal
+        open={rulesOpen}
+        onClose={() => setRulesOpen(false)}
+        entryFeeEth={ENTRY_FEE_ETH}
+        targetEth={TARGET_POT_ETH}
+      />
     </div>
   );
-};
-
-export default App;
+}

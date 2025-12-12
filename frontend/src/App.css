@@ -1,0 +1,170 @@
+:root{
+  --bg:#020617;
+  --card:#071024;
+  --card2:#050b18;
+  --border:rgba(148,163,184,0.22);
+  --text:#e5e7eb;
+  --muted:#94a3b8;
+
+  --win:#22c55e;
+  --win2:#16a34a;
+  --gold:#facc15;
+  --danger:#ef4444;
+
+  --shadow: 0 22px 60px rgba(0,0,0,0.55);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
+
+.page{min-height:100vh;padding:18px}
+.shell{max-width:980px;margin:0 auto}
+
+.topbar{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:14px;
+}
+
+.brandTitle{
+  font-weight:900;
+  letter-spacing:0.14em;
+  font-size:22px;
+}
+.brandWin{color:var(--win)}
+.brandSub{
+  margin-top:6px;
+  color:var(--muted);
+  font-size:12px;
+}
+
+.topActions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+
+.pillBtn{
+  border:1px solid rgba(148,163,184,0.35);
+  background:transparent;
+  color:var(--text);
+  padding:8px 12px;
+  border-radius:999px;
+  font-size:12px;
+  letter-spacing:0.12em;
+  text-transform:uppercase;
+  cursor:pointer;
+}
+
+.ghostBtn{
+  border:1px solid rgba(148,163,184,0.25);
+  background:rgba(2,6,23,0.4);
+  color:var(--text);
+  padding:8px 10px;
+  border-radius:999px;
+  font-size:12px;
+  letter-spacing:0.12em;
+  text-transform:uppercase;
+  cursor:pointer;
+}
+
+.liveLine{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:10px;
+  letter-spacing:0.18em;
+  color:rgba(148,163,184,0.9);
+  text-transform:uppercase;
+}
+.liveDot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--win);
+  box-shadow:0 0 14px rgba(34,197,94,0.65);
+}
+
+.grid{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap:14px;
+}
+
+.card{
+  background: radial-gradient(circle at top, var(--card), var(--card2) 60%, #000 120%);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:14px;
+  box-shadow: var(--shadow);
+}
+
+.timerWrap{margin-top:12px;text-align:center}
+.timer{
+  font-size:40px;
+  font-variant-numeric:tabular-nums;
+  font-weight:800;
+  letter-spacing:0.06em;
+}
+.timerHolding{
+  text-shadow:0 0 24px rgba(34,197,94,0.35);
+}
+.timerLabel{
+  font-size:10px;
+  color:rgba(148,163,184,0.9);
+  letter-spacing:0.24em;
+  text-transform:uppercase;
+  margin-top:6px;
+}
+
+.secondaryBtn{
+  width:100%;
+  margin-top:10px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,0.25);
+  background:rgba(2,6,23,0.55);
+  color:var(--text);
+  cursor:pointer;
+  text-transform:uppercase;
+  letter-spacing:0.12em;
+  font-size:12px;
+}
+
+.hintRow{
+  margin-top:10px;
+  display:flex;
+  justify-content:space-between;
+  font-size:12px;
+}
+.hintMuted{color:rgba(148,163,184,0.9)}
+.hintStrong{color:var(--win);font-weight:700}
+
+.status{
+  margin-top:10px;
+  font-size:12px;
+  color:rgba(148,163,184,0.95);
+  border-top:1px solid rgba(148,163,184,0.15);
+  padding-top:10px;
+  word-break:break-word;
+}
+
+.footerNote{
+  margin-top:12px;
+  font-size:10px;
+  color:rgba(148,163,184,0.75);
+  letter-spacing:0.08em;
+  text-align:center;
+}
+
+/* desktop */
+@media (min-width: 900px){
+  .page{padding:28px}
+  .brandTitle{font-size:26px}
+  .grid{grid-template-columns: 1.2fr 0.8fr; gap:16px}
+  .card{padding:18px;border-radius:22px}
+  .timer{font-size:46px}
+}
