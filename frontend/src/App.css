@@ -45,10 +45,10 @@ body{
 :root{ --uiScale: 1; }
 
 /* ekran büyüdükçe UI orantılı büyüsün */
-@media (min-width: 1000px){ :root{ --uiScale: 1.06; } }
-@media (min-width: 1200px){ :root{ --uiScale: 1.10; } }
-@media (min-width: 1400px){ :root{ --uiScale: 1.14; } }
-@media (min-width: 1600px){ :root{ --uiScale: 1.18; } }
+@media (min-width: 1000px){ :root{ --uiScale: 1.10; } }
+@media (min-width: 1200px){ :root{ --uiScale: 1.14; } }
+@media (min-width: 1400px){ :root{ --uiScale: 1.18; } }
+@media (min-width: 1600px){ :root{ --uiScale: 1.22; } }
 
 .topbar{
   display:flex;
