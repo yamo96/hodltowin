@@ -22,13 +22,26 @@ export default function RulesModal({ open, onClose, entryFeeEth, targetEth }) {
           width: "min(520px, 100%)",
           borderRadius: 18,
           border: "1px solid rgba(148,163,184,0.25)",
-          background: "radial-gradient(circle at top,#071024,#050b18 60%,#000 120%)",
+          background:
+            "radial-gradient(circle at top,#071024,#050b18 60%,#000 120%)",
           padding: 16,
           color: "#e5e7eb"
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center"
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 900,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase"
+            }}
+          >
             Rules
           </div>
           <button
@@ -46,11 +59,52 @@ export default function RulesModal({ open, onClose, entryFeeEth, targetEth }) {
           </button>
         </div>
 
-        <ul style={{ marginTop: 12, marginBottom: 0, color: "rgba(229,231,235,0.92)", lineHeight: 1.6 }}>
-          <li>Entry per attempt: <b style={{ color: "#22c55e" }}>{entryFeeEth} ETH</b></li>
+        {/* 🔥 Rule #1: en önemli mesaj */}
+        <div
+          style={{
+            marginTop: 12,
+            padding: "10px 12px",
+            borderRadius: 14,
+            border: "1px solid rgba(34,197,94,0.25)",
+            background: "rgba(34,197,94,0.08)"
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 900,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: "#22c55e",
+              fontSize: 12
+            }}
+          >
+            Rule #1
+          </div>
+          <div style={{ marginTop: 6, lineHeight: 1.55, color: "rgba(229,231,235,0.92)" }}>
+            <b>No release = no score.</b> Your score is recorded only when you{" "}
+            <b>release</b> the button.
+          </div>
+        </div>
+
+        <ul
+          style={{
+            marginTop: 12,
+            marginBottom: 0,
+            color: "rgba(229,231,235,0.92)",
+            lineHeight: 1.6
+          }}
+        >
+          <li>
+            Entry per attempt:{" "}
+            <b style={{ color: "#22c55e" }}>{entryFeeEth} ETH</b>
+          </li>
           <li>Pay first, then hold the button.</li>
-          <li>Longest HODL time ranks higher.</li>
-          <li>Payout triggers when pot reaches <b style={{ color: "#22c55e" }}>{targetEth.toFixed(4)} ETH</b>.</li>
+          <li>Release to lock your score.</li>
+          <li>Longer score ranks higher on the leaderboard.</li>
+          <li>
+            Payout triggers when pot reaches{" "}
+            <b style={{ color: "#22c55e" }}>{targetEth.toFixed(4)} ETH</b>.
+          </li>
           <li>No refunds. On-chain entry. MVP uses off-chain scoring.</li>
         </ul>
       </div>

@@ -355,12 +355,13 @@ export default function App() {
               roundId={roundId}
             />
 
-            <div className="timerWrap">
-              <div className={`timer ${holding ? "timerHolding" : ""}`}>
-                {formatMs(elapsedMs)}
-              </div>
-              <div className="timerLabel">CURRENT ATTEMPT</div>
-            </div>
+<div className="timerWrap">
+  <div className={`timer ${holding ? "timerHolding" : ""}`}>
+    {formatMs(elapsedMs)}
+  </div>
+  <div className="timerLabel">CURRENT ATTEMPT</div>
+  <div className="timerSub">No release = no score.</div>
+</div>
 
             <HoldButton
               holding={holding}

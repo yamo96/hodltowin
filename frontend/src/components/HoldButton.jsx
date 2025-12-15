@@ -18,14 +18,11 @@ export default function HoldButton({
   else if (hasEntry && !holding) label = "HODL";
   else if (holding) label = "DON'T LET GO";
 
-  const sub =
-    pendingScore != null
-      ? "Retry submit to save your score"
-      : !hasEntry
-      ? "Entry required to play"
-      : holding
-      ? "Hold. Hold. Hold."
-      : "Press and hold";
+  // 🔑 Alt mesajlar (net ve çakışmasız)
+  let sub = "";
+  if (pendingScore != null) sub = "Retry submit to save your score";
+  else if (!hasEntry) sub = "Entry required to play";
+  else if (!holding) sub = "Press and hold";
 
   return (
     <div style={{ marginTop: 14 }}>
@@ -59,23 +56,42 @@ export default function HoldButton({
               : "0 14px 46px rgba(34,197,94,0.25)",
           transform: holding ? "translateY(4px)" : "translateY(0)",
           opacity: disabled ? 0.65 : 1,
-          transition: "transform 0.08s ease-out, box-shadow 0.12s ease-out, opacity 0.12s"
+          transition:
+            "transform 0.08s ease-out, box-shadow 0.12s ease-out, opacity 0.12s"
         }}
       >
         {label}
-        
       </button>
 
-      <div
-        style={{
-          marginTop: 10,
-          textAlign: "center",
-          color: "rgba(148,163,184,0.9)",
-          fontSize: 12
-        }}
-      >
-        {sub}
-      </div>
+      {/* 🔥 ANA MESAJ: holding sırasında */}
+      {holding ? (
+        <div
+          style={{
+            marginTop: 12,
+            textAlign: "center",
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            color: "#22c55e"
+          }}
+        >
+          Release to lock your score
+        </div>
+      ) : (
+        sub && (
+          <div
+            style={{
+              marginTop: 10,
+              textAlign: "center",
+              color: "rgba(148,163,184,0.9)",
+              fontSize: 12
+            }}
+          >
+            {sub}
+          </div>
+        )
+      )}
     </div>
   );
 }

@@ -147,6 +147,12 @@ body{
   text-transform:uppercase;
   margin-top:6px;
 }
+.timerSub{
+  margin-top:8px;
+  font-size:11px;
+  color:rgba(148,163,184,0.95);
+  letter-spacing:0.08em;
+}
 
 .secondaryBtn{
   width:100%;
