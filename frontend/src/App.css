@@ -14,7 +14,6 @@
   --shadow: 0 22px 60px rgba(0,0,0,0.55);
 }
 
-/* RESET */
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
@@ -24,47 +23,57 @@ body{
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
 }
 
-/* PAGE */
+/* page: ortada kalsın ama büyüsün */
 .page{
   min-height:100vh;
-  padding:24px;
+  padding:18px;
   display:flex;
   justify-content:center;
 }
 
-/* ANA CONTAINER */
+/* shell: genişliği az artar, ama asıl büyüme scale ile */
 .shell{
   width:100%;
-  max-width:1440px;   /* 🔥 GERÇEK BÜYÜKLÜK */
+  max-width:1180px;
   margin:0 auto;
+  /* 🔥 orantılı büyüme */
+  transform-origin: top center;
+  transform: scale(var(--uiScale));
 }
 
-/* HEADER */
+/* default scale */
+:root{ --uiScale: 1; }
+
+/* ekran büyüdükçe UI orantılı büyüsün */
+@media (min-width: 1000px){ :root{ --uiScale: 1.06; } }
+@media (min-width: 1200px){ :root{ --uiScale: 1.10; } }
+@media (min-width: 1400px){ :root{ --uiScale: 1.14; } }
+@media (min-width: 1600px){ :root{ --uiScale: 1.18; } }
+
 .topbar{
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
-  gap:16px;
-  margin-bottom:18px;
+  gap:12px;
+  margin-bottom:14px;
 }
 
 .brandTitle{
   font-weight:900;
-  letter-spacing:0.16em;
-  font-size:26px;
+  letter-spacing:0.14em;
+  font-size:22px;
 }
 .brandWin{color:var(--win)}
 .brandSub{
   margin-top:6px;
   color:var(--muted);
-  font-size:13px;
+  font-size:12px;
 }
 
-/* ACTIONS */
 .topActions{
   display:flex;
   align-items:center;
-  gap:12px;
+  gap:10px;
   flex-wrap:wrap;
   justify-content:flex-end;
 }
@@ -73,10 +82,10 @@ body{
   border:1px solid rgba(148,163,184,0.35);
   background:transparent;
   color:var(--text);
-  padding:10px 14px;
+  padding:8px 12px;
   border-radius:999px;
   font-size:12px;
-  letter-spacing:0.14em;
+  letter-spacing:0.12em;
   text-transform:uppercase;
   cursor:pointer;
 }
@@ -85,128 +94,111 @@ body{
   border:1px solid rgba(148,163,184,0.25);
   background:rgba(2,6,23,0.4);
   color:var(--text);
-  padding:10px 12px;
+  padding:8px 10px;
   border-radius:999px;
   font-size:12px;
-  letter-spacing:0.14em;
+  letter-spacing:0.12em;
   text-transform:uppercase;
   cursor:pointer;
 }
 
-/* LIVE */
 .liveLine{
   display:flex;
   align-items:center;
   gap:6px;
-  font-size:11px;
-  letter-spacing:0.2em;
+  font-size:10px;
+  letter-spacing:0.18em;
   color:rgba(148,163,184,0.9);
   text-transform:uppercase;
 }
 .liveDot{
-  width:8px;
-  height:8px;
-  border-radius:50%;
+  width:8px;height:8px;border-radius:50%;
   background:var(--win);
-  box-shadow:0 0 16px rgba(34,197,94,0.7);
+  box-shadow:0 0 14px rgba(34,197,94,0.65);
 }
 
-/* GRID */
+/* grid: oranı koru */
 .grid{
   display:grid;
-  grid-template-columns: 2.2fr 1.2fr; /* 🔥 masaüstü default geniş */
-  gap:22px;
-  align-items:start;
+  grid-template-columns: 1fr;
+  gap:14px;
 }
 
-/* CARD */
 .card{
-  background: radial-gradient(
-    circle at top,
-    var(--card),
-    var(--card2) 60%,
-    #000 120%
-  );
+  background: radial-gradient(circle at top, var(--card), var(--card2) 60%, #000 120%);
   border:1px solid var(--border);
-  border-radius:22px;
-  padding:20px;
-  box-shadow:var(--shadow);
+  border-radius:18px;
+  padding:14px;
+  box-shadow: var(--shadow);
 }
 
-/* TIMER */
-.timerWrap{
-  margin-top:18px;
-  text-align:center;
-}
+.timerWrap{margin-top:12px;text-align:center}
 .timer{
-  font-size:54px;
+  font-size:40px;
   font-variant-numeric:tabular-nums;
-  font-weight:900;
-  letter-spacing:0.08em;
+  font-weight:800;
+  letter-spacing:0.06em;
 }
-.timerHolding{
-  text-shadow:0 0 28px rgba(34,197,94,0.45);
-}
+.timerHolding{ text-shadow:0 0 24px rgba(34,197,94,0.35); }
 .timerLabel{
-  font-size:11px;
+  font-size:10px;
   color:rgba(148,163,184,0.9);
-  letter-spacing:0.28em;
+  letter-spacing:0.24em;
   text-transform:uppercase;
-  margin-top:8px;
+  margin-top:6px;
 }
 
-/* BUTTONS */
 .secondaryBtn{
   width:100%;
-  margin-top:14px;
-  padding:12px 14px;
-  border-radius:14px;
+  margin-top:10px;
+  padding:10px 12px;
+  border-radius:12px;
   border:1px solid rgba(148,163,184,0.25);
   background:rgba(2,6,23,0.55);
   color:var(--text);
   cursor:pointer;
   text-transform:uppercase;
-  letter-spacing:0.14em;
+  letter-spacing:0.12em;
   font-size:12px;
 }
 
-/* HINT */
 .hintRow{
-  margin-top:14px;
+  margin-top:10px;
   display:flex;
   justify-content:space-between;
-  font-size:13px;
+  font-size:12px;
 }
 .hintMuted{color:rgba(148,163,184,0.9)}
-.hintStrong{
-  color:var(--win);
-  font-weight:800;
-}
+.hintStrong{color:var(--win);font-weight:700}
 
-/* STATUS */
 .status{
-  margin-top:14px;
+  margin-top:10px;
   font-size:12px;
   color:rgba(148,163,184,0.95);
   border-top:1px solid rgba(148,163,184,0.15);
-  padding-top:12px;
+  padding-top:10px;
   word-break:break-word;
 }
 
-/* FOOTER */
 .footerNote{
-  margin-top:16px;
-  font-size:11px;
+  margin-top:12px;
+  font-size:10px;
   color:rgba(148,163,184,0.75);
-  letter-spacing:0.1em;
+  letter-spacing:0.08em;
   text-align:center;
 }
 
-/* MOBİL */
+/* desktop: kolon oranını aynı tut */
+@media (min-width: 900px){
+  .page{padding:28px}
+  .brandTitle{font-size:26px}
+  .grid{grid-template-columns: 1.35fr 0.8fr; gap:18px}
+  .card{padding:18px;border-radius:22px}
+  .timer{font-size:46px}
+}
+
+/* mobile: scale kapalı kalsın */
 @media (max-width: 899px){
-  .grid{
-    grid-template-columns:1fr;
-    gap:16px;
-  }
-  .timer{font-size:44px}
+  :root{ --uiScale: 1; }
+  .shell{ transform: none; }
 }
