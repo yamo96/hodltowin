@@ -30,6 +30,11 @@ export default function HoldButton({
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerLeave}
+        onContextMenu={(e) => {
+  e.preventDefault();
+  onPointerUp?.(e);
+}}
+
         disabled={disabled}
         style={{
           width: "100%",

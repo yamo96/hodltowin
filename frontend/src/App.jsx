@@ -47,7 +47,8 @@ function parseWalletError(e) {
     e?.error?.message ||
     e?.error?.data?.message ||
     e?.data?.message ||
-    (Array.isArray(e?.errors) && (e.errors[0]?.message || e.errors[0]?.shortMessage)) ||
+    (Array.isArray(e?.errors) &&
+      (e.errors[0]?.message || e.errors[0]?.shortMessage)) ||
     e?.shortMessage ||
     e?.reason ||
     e?.message ||
@@ -60,6 +61,7 @@ function parseWalletError(e) {
     return "Gas estimation failed (wrong network / contract reverted).";
   return inner;
 }
+
 async function ensureBaseSepolia() {
   if (!window.ethereum) return { ok: false, reason: "No wallet found." };
   const chainId = await window.ethereum.request({ method: "eth_chainId" });
@@ -105,7 +107,9 @@ export default function App() {
       const net = await ensureBaseSepolia();
       if (!net.ok) return setStatus(net.reason);
 
-      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      const accounts = await window.ethereum.request({
+        method: "eth_requestAccounts"
+      });
       setAccount(accounts?.[0] || null);
       setStatus("");
     } catch (e) {
@@ -141,7 +145,9 @@ export default function App() {
   const fetchLeaderboard = async (rId) => {
     try {
       const useRound = Number(rId || roundId);
-      const res = await fetch(`${BACKEND_URL}/api/leaderboard?roundId=${useRound}`);
+      const res = await fetch(
+        `${BACKEND_URL}/api/leaderboard?roundId=${useRound}`
+      );
       if (!res.ok) return;
       const data = await res.json();
       const list = Array.isArray(data) ? data : data.leaderboard || [];
@@ -309,6 +315,29 @@ export default function App() {
     await submitScore(finalMs);
   };
 
+  // ✅ Anti-exploit: tab değişirse / pencere focus kaybederse otomatik bırak
+  useEffect(() => {
+    if (!holding) return;
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopHolding(); // event yok → otomatik bırak
+      }
+    };
+
+    const handleBlur = () => {
+      stopHolding(); // event yok → otomatik bırak
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("blur", handleBlur);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [holding]);
+
   // derived UI
   const potNum = Number(potEth || "0");
   const leftToTarget = Math.max(0, TARGET_POT_ETH - potNum);
@@ -316,7 +345,9 @@ export default function App() {
 
   // rank highlight
   const yourIndex = account
-    ? leaderboard.findIndex((r) => (r.wallet || "").toLowerCase() === account.toLowerCase())
+    ? leaderboard.findIndex(
+        (r) => (r.wallet || "").toLowerCase() === account.toLowerCase()
+      )
     : -1;
 
   return (
@@ -355,13 +386,13 @@ export default function App() {
               roundId={roundId}
             />
 
-<div className="timerWrap">
-  <div className={`timer ${holding ? "timerHolding" : ""}`}>
-    {formatMs(elapsedMs)}
-  </div>
-  <div className="timerLabel">CURRENT ATTEMPT</div>
-  <div className="timerSub">No release = no score.</div>
-</div>
+            <div className="timerWrap">
+              <div className={`timer ${holding ? "timerHolding" : ""}`}>
+                {formatMs(elapsedMs)}
+              </div>
+              <div className="timerLabel">CURRENT ATTEMPT</div>
+              <div className="timerSub">No release = no score.</div>
+            </div>
 
             <HoldButton
               holding={holding}
