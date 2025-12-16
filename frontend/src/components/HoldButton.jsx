@@ -11,6 +11,7 @@ export default function HoldButton({
 }) {
   const disabled = isPaying || pendingScore != null;
 
+  // -------- LABEL --------
   let label = "PAY";
   if (pendingScore != null) label = "SUBMIT PENDING";
   else if (isPaying) label = "PAYING...";
@@ -18,7 +19,7 @@ export default function HoldButton({
   else if (hasEntry && !holding) label = "HODL";
   else if (holding) label = "DON'T LET GO";
 
-  // 🔑 Alt mesajlar (net ve çakışmasız)
+  // -------- SUBTEXT (holding DIŞINDA) --------
   let sub = "";
   if (pendingScore != null) sub = "Retry submit to save your score";
   else if (!hasEntry) sub = "Entry required to play";
@@ -30,11 +31,11 @@ export default function HoldButton({
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerLeave}
+        onPointerCancel={onPointerUp} // ✅ mobil / gesture güvenliği
         onContextMenu={(e) => {
-  e.preventDefault();
-  onPointerUp?.(e);
-}}
-
+          e.preventDefault();          // ✅ sağ tık menüsünü kapat
+          if (holding) onPointerUp?.(e); // ✅ sağ tık = release
+        }}
         disabled={disabled}
         style={{
           width: "100%",
@@ -68,7 +69,7 @@ export default function HoldButton({
         {label}
       </button>
 
-      {/* 🔥 ANA MESAJ: holding sırasında */}
+      {/* 🔥 ANA MESAJ — sadece HOLDING sırasında */}
       {holding ? (
         <div
           style={{
