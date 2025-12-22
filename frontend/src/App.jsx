@@ -99,6 +99,12 @@ export default function App() {
   const holdStartRef = useRef(null);
   const intervalRef = useRef(null);
 
+  // ✅ interval stale roundId fix
+  const roundIdRef = useRef(1);
+  useEffect(() => {
+    roundIdRef.current = roundId;
+  }, [roundId]);
+
   // ---------- wallet connect ----------
   const connectWallet = async () => {
     try {
@@ -144,7 +150,7 @@ export default function App() {
 
   const fetchLeaderboard = async (rId) => {
     try {
-      const useRound = Number(rId || roundId);
+      const useRound = Number(rId || roundIdRef.current || 1);
       const res = await fetch(
         `${BACKEND_URL}/api/leaderboard?roundId=${useRound}`
       );
@@ -157,12 +163,13 @@ export default function App() {
     }
   };
 
+  // ✅ initial + polling (roundIdRef ile)
   useEffect(() => {
     fetchPot();
-    fetchLeaderboard();
+    fetchLeaderboard(1);
 
     const potInt = setInterval(fetchPot, 12000);
-    const lbInt = setInterval(() => fetchLeaderboard(), 12000);
+    const lbInt = setInterval(() => fetchLeaderboard(roundIdRef.current), 12000);
 
     return () => {
       clearInterval(potInt);
@@ -170,6 +177,12 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ✅ roundId değişince anında leaderboard çek (boş gidip gelmesin)
+  useEffect(() => {
+    fetchLeaderboard(roundId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roundId]);
 
   // restore hasEntry per round
   useEffect(() => {
@@ -320,14 +333,10 @@ export default function App() {
     if (!holding) return;
 
     const handleVisibility = () => {
-      if (document.hidden) {
-        stopHolding(); // event yok → otomatik bırak
-      }
+      if (document.hidden) stopHolding();
     };
 
-    const handleBlur = () => {
-      stopHolding(); // event yok → otomatik bırak
-    };
+    const handleBlur = () => stopHolding();
 
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("blur", handleBlur);
@@ -336,6 +345,8 @@ export default function App() {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("blur", handleBlur);
     };
+    // stopHolding closure issue? holding değişince re-register oluyor zaten.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holding]);
 
   // derived UI
