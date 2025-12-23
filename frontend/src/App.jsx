@@ -105,6 +105,10 @@ export default function App() {
     roundIdRef.current = roundId;
   }, [roundId]);
 
+  // ✅ leaderboard loading + out-of-order guard
+  const [lbLoading, setLbLoading] = useState(false);
+  const lbReqIdRef = useRef(0);
+
   // ---------- wallet connect ----------
   const connectWallet = async () => {
     try {
@@ -148,22 +152,36 @@ export default function App() {
     }
   };
 
+  // ✅ KEEP OLD LIST (no flicker) + request guard
   const fetchLeaderboard = async (rId) => {
+    const useRound = Number(rId || roundIdRef.current || 1);
+    const reqId = ++lbReqIdRef.current;
+
     try {
-      const useRound = Number(rId || roundIdRef.current || 1);
+      setLbLoading(true);
+
       const res = await fetch(
-        `${BACKEND_URL}/api/leaderboard?roundId=${useRound}`
+        `${BACKEND_URL}/api/leaderboard?roundId=${useRound}`,
+        { cache: "no-store" }
       );
-      if (!res.ok) return;
+      if (!res.ok) throw new Error("lb fetch failed");
+
       const data = await res.json();
       const list = Array.isArray(data) ? data : data.leaderboard || [];
-      setLeaderboard(list);
+
+      // ✅ out-of-order response koruması
+      if (reqId !== lbReqIdRef.current) return;
+
+      setLeaderboard(list); // ✅ sadece başarılıysa güncelle
     } catch (e) {
       console.error("leaderboard error", e);
+      // ❗ burada setLeaderboard([]) YOK → eski liste kalsın
+    } finally {
+      if (reqId === lbReqIdRef.current) setLbLoading(false);
     }
   };
 
-  // ✅ initial + polling (roundIdRef ile)
+  // ✅ initial + polling
   useEffect(() => {
     fetchPot();
     fetchLeaderboard(1);
@@ -178,7 +196,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ roundId değişince anında leaderboard çek (boş gidip gelmesin)
+  // ✅ roundId değişince anında leaderboard çek
   useEffect(() => {
     fetchLeaderboard(roundId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -299,8 +317,7 @@ export default function App() {
     if (!hasEntry) {
       const ok = await sendEntryTx();
       if (!ok) return;
-      // user will press again to start hold
-      return;
+      return; // user will press again to start hold
     }
 
     if (holding) return;
@@ -328,14 +345,13 @@ export default function App() {
     await submitScore(finalMs);
   };
 
-  // ✅ Anti-exploit: tab değişirse / pencere focus kaybederse otomatik bırak
+  // ✅ Anti-exploit: tab değişirse / focus kaybederse otomatik bırak
   useEffect(() => {
     if (!holding) return;
 
     const handleVisibility = () => {
       if (document.hidden) stopHolding();
     };
-
     const handleBlur = () => stopHolding();
 
     document.addEventListener("visibilitychange", handleVisibility);
@@ -345,7 +361,6 @@ export default function App() {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("blur", handleBlur);
     };
-    // stopHolding closure issue? holding değişince re-register oluyor zaten.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holding]);
 
@@ -438,13 +453,12 @@ export default function App() {
               yourIndex={yourIndex}
               formatMs={formatMs}
               shorten={shorten}
+              loading={lbLoading} // Leaderboard dosyan bunu kullanmasa bile sorun yok
             />
           </section>
         </main>
 
-        <footer className="footerNote">
-          Scores: off-chain (for now). Pot: on-chain.
-        </footer>
+        <footer className="footerNote">Scores: off-chain (for now). Pot: on-chain.</footer>
       </div>
 
       <RulesModal
