@@ -94,10 +94,16 @@ export default function App() {
   const [isPaying, setIsPaying] = useState(false);
 
   const [pendingScore, setPendingScore] = useState(null);
+  // Retry durumunda sessionId'yi kaybetmemek için state'e de koyuyoruz
+  const [pendingSessionId, setPendingSessionId] = useState(null);
+  
   const [rulesOpen, setRulesOpen] = useState(false);
 
   const holdStartRef = useRef(null);
   const intervalRef = useRef(null);
+  
+  // 🔥 YENİ: Backend'den gelen Session ID'yi burada tutuyoruz
+  const sessionIdRef = useRef(null);
 
   // ✅ interval stale roundId fix
   const roundIdRef = useRef(1);
@@ -152,7 +158,6 @@ export default function App() {
     }
   };
 
-  // ✅ KEEP OLD LIST (no flicker) + request guard
   const fetchLeaderboard = async (rId) => {
     const useRound = Number(rId || roundIdRef.current || 1);
     const reqId = ++lbReqIdRef.current;
@@ -169,19 +174,16 @@ export default function App() {
       const data = await res.json();
       const list = Array.isArray(data) ? data : data.leaderboard || [];
 
-      // ✅ out-of-order response koruması
       if (reqId !== lbReqIdRef.current) return;
 
-      setLeaderboard(list); // ✅ sadece başarılıysa güncelle
+      setLeaderboard(list);
     } catch (e) {
       console.error("leaderboard error", e);
-      // ❗ burada setLeaderboard([]) YOK → eski liste kalsın
     } finally {
       if (reqId === lbReqIdRef.current) setLbLoading(false);
     }
   };
 
-  // ✅ initial + polling
   useEffect(() => {
     fetchPot();
     fetchLeaderboard(1);
@@ -196,13 +198,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ roundId değişince anında leaderboard çek
   useEffect(() => {
     fetchLeaderboard(roundId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
-  // restore hasEntry per round
   useEffect(() => {
     if (!account) return setHasEntry(false);
     setHasEntry(localStorage.getItem(entryKey(account, roundId)) === "1");
@@ -256,9 +256,14 @@ export default function App() {
     }
   };
 
-  // ---------- submit score ----------
-  const submitScore = async (scoreMs) => {
+  // ---------- submit score (UPDATED FOR ANTI-CHEAT) ----------
+  const submitScore = async (scoreMs, sessionId) => {
     if (!account) return false;
+    // Eğer sessionId yoksa, backend zaten reddeder
+    if (!sessionId) {
+        setStatus("Error: No session ID. Anti-cheat check failed.");
+        return false;
+    }
 
     setStatus("Submitting score...");
 
@@ -266,11 +271,13 @@ export default function App() {
       const res = await fetch(`${BACKEND_URL}/api/submit-score`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // 🔥 YENİ: sessionId'yi de gönderiyoruz
         body: JSON.stringify({
           roundId,
           wallet: account,
           walletAddress: account,
-          scoreMs
+          scoreMs,
+          sessionId 
         })
       });
 
@@ -278,8 +285,13 @@ export default function App() {
       console.log("submit-score response:", data);
 
       if (!res.ok) {
-        setStatus("Backend error while submitting score. You can retry.");
+        // Backend'den gelen özel hatayı göster (örn: "Zaman manipülasyonu!")
+        const errMsg = data.error || "Backend error";
+        setStatus(`Submit failed: ${errMsg}`);
+        
+        // Retry için verileri sakla
         setPendingScore(scoreMs);
+        setPendingSessionId(sessionId);
         return false;
       }
 
@@ -290,23 +302,29 @@ export default function App() {
       if (!bestScoreMs || scoreMs > bestScoreMs) setBestScoreMs(scoreMs);
 
       setPendingScore(null);
-      setStatus("Score submitted.");
+      setPendingSessionId(null);
+      sessionIdRef.current = null; // Session bitti, temizle
+
+      setStatus("Score submitted successfully!");
       fetchLeaderboard(roundId);
       return true;
     } catch (e) {
       console.error("submit-score error", e);
-      setStatus("Submit failed. You can retry.");
+      setStatus("Submit failed (Network). You can retry.");
       setPendingScore(scoreMs);
+      setPendingSessionId(sessionId);
       return false;
     }
   };
 
   const retrySubmit = async () => {
-    if (pendingScore == null) return;
-    await submitScore(pendingScore);
+    if (pendingScore == null || pendingSessionId == null) return;
+    await submitScore(pendingScore, pendingSessionId);
   };
 
-  // ---------- hold logic ----------
+  // ---------- hold logic (UPDATED FOR ANTI-CHEAT) ----------
+  
+  // 1. START GAME: Backend'den izin (sessionId) al
   const startHolding = async (e) => {
     e?.preventDefault?.();
 
@@ -317,19 +335,48 @@ export default function App() {
     if (!hasEntry) {
       const ok = await sendEntryTx();
       if (!ok) return;
-      return; // user will press again to start hold
+      return; 
     }
 
     if (holding) return;
 
-    setHolding(true);
-    holdStartRef.current = Date.now();
-    setElapsedMs(0);
-    setStatus("HOLDING...");
+    // 🔥 Backend'e "Ben Başlıyorum" de
+    setStatus("Syncing with server...");
+    
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/start-game`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              roundId,
+              wallet: account
+            })
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok) {
+            setStatus(`Start failed: ${data.error || "Unknown"}`);
+            return; // Hata varsa oyunu başlatma
+        }
 
-    intervalRef.current = setInterval(() => {
-      setElapsedMs(Date.now() - holdStartRef.current);
-    }, 20);
+        // Backend'den gelen sessionId'yi kaydet
+        sessionIdRef.current = data.sessionId;
+        
+        // Şimdi timer'ı başlat (Görsel)
+        setHolding(true);
+        holdStartRef.current = Date.now();
+        setElapsedMs(0);
+        setStatus("HOLDING... Don't let go!");
+
+        intervalRef.current = setInterval(() => {
+          setElapsedMs(Date.now() - holdStartRef.current);
+        }, 20);
+
+    } catch (err) {
+        console.error("Start Game Error", err);
+        setStatus("Network error. Could not start.");
+    }
   };
 
   const stopHolding = async (e) => {
@@ -341,8 +388,10 @@ export default function App() {
 
     const finalMs = Date.now() - holdStartRef.current;
     setElapsedMs(0);
-
-    await submitScore(finalMs);
+    
+    // SessionID'yi al ve gönder
+    const currentSessionId = sessionIdRef.current;
+    await submitScore(finalMs, currentSessionId);
   };
 
   // ✅ Anti-exploit: tab değişirse / focus kaybederse otomatik bırak
@@ -453,12 +502,12 @@ export default function App() {
               yourIndex={yourIndex}
               formatMs={formatMs}
               shorten={shorten}
-              loading={lbLoading} // Leaderboard dosyan bunu kullanmasa bile sorun yok
+              loading={lbLoading}
             />
           </section>
         </main>
 
-        <footer className="footerNote">Scores: off-chain (for now). Pot: on-chain.</footer>
+        <footer className="footerNote">Scores: Secure & Server-Verified. Pot: On-chain.</footer>
       </div>
 
       <RulesModal
