@@ -208,3 +208,7 @@ body{
   :root{ --uiScale: 1; }
   .shell{ transform: none; }
 }
+/* Sayfa zıplamasını engeller */
+html {
+  overflow-y: scroll;
+}
