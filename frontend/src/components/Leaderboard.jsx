@@ -17,12 +17,13 @@ export default function Leaderboard({
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center", // Baseline yerine center daha düzgün durur
+          alignItems: "center",
           gap: 10,
-          marginBottom: 12
+          marginBottom: 12,
+          minHeight: 24 // Yüksekliği sabitledik ki zıplama yapmasın
         }}
       >
-        {/* SOL: BAŞLIK + UPDATING (Buraya koyduk ki ekranı itmesin) */}
+        {/* SOL TARAFA SABİTLEDİK */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div
             style={{
@@ -35,37 +36,38 @@ export default function Leaderboard({
             Leaderboard
           </div>
 
-          {/* LOADING BURADA - Ortadaki boşluğa doğru açılır, kenara vurmaz */}
-          {loading && (
-            <div
+          {/* BU KUTU ARTIK HEP BURADA, SADECE GÖRÜNMEZ OLUYOR */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 10,
+              color: "#22c55e",
+              fontWeight: 600,
+              background: "rgba(34,197,94,0.1)",
+              padding: "2px 8px",
+              borderRadius: 99,
+              // YENİ TAKTİK: Opacity değişiyor, element hep orada!
+              opacity: loading ? 1 : 0, 
+              transition: "opacity 0.2s ease-in-out",
+              pointerEvents: "none" // Görünmezken tıklanmasın
+            }}
+          >
+            <span
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 10,
-                color: "#22c55e",
-                fontWeight: 600,
-                background: "rgba(34,197,94,0.1)",
-                padding: "2px 8px",
-                borderRadius: 99,
-                animation: "fadeIn 0.2s ease-out"
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: "#22c55e",
+                boxShadow: "0 0 8px #22c55e"
               }}
-            >
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "#22c55e",
-                  boxShadow: "0 0 8px #22c55e"
-                }}
-              />
-              Updating
-            </div>
-          )}
+            />
+            Updating
+          </div>
         </div>
 
-        {/* SAĞ: SADECE RANK (Sabit genişlik, titreme yapmaz) */}
+        {/* SAĞ TARAFA SABİT */}
         <div
           style={{
             fontSize: 11,
@@ -105,7 +107,7 @@ export default function Leaderboard({
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    opacity: loading ? 0.7 : 1, // Loading olunca hafif soluklaşsın
+                    opacity: loading ? 0.7 : 1,
                     transition: "opacity 0.2s"
                   }}
                 >
