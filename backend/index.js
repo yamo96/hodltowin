@@ -4,7 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const { ethers } = require("ethers");
 const { Pool } = require("pg");
-const { v4: uuidv4 } = require('uuid'); // Session ID için
+const { v4: uuidv4 } = require('uuid');
 
 // ---------------- CONFIG ----------------
 
@@ -17,29 +17,27 @@ const CONTRACT_ADDRESS_RAW = process.env.CONTRACT_ADDRESS || "0x0000000000000000
 const RPC_URL = process.env.BASE_RPC_URL || "";
 const DATABASE_URL = process.env.DATABASE_URL || "";
 
-// Render + Neon Bağlantısı
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
 if (!RPC_URL || !DATABASE_URL) {
-  console.error("❌ Eksik Config: BASE_RPC_URL veya DATABASE_URL yok.");
+  console.error("❌ Missing Config: BASE_RPC_URL or DATABASE_URL");
   process.exit(1);
 }
 
-// Contract Address Normalize
 let CONTRACT_ADDRESS;
 try {
   CONTRACT_ADDRESS = ethers.getAddress(CONTRACT_ADDRESS_RAW);
 } catch (e) {
-  console.error("❌ Geçersiz Kontrat Adresi:", CONTRACT_ADDRESS_RAW);
+  console.error("❌ Invalid Contract Address:", CONTRACT_ADDRESS_RAW);
   process.exit(1);
 }
 
-console.log("✅ Sistem Başlatılıyor...");
-console.log("📍 Kontrat:", CONTRACT_ADDRESS);
-console.log("💰 Hedef Pot:", THRESHOLD_ETH, "ETH");
+console.log("✅ System Started");
+console.log("📍 Contract:", CONTRACT_ADDRESS);
+console.log("💰 Target Pot:", THRESHOLD_ETH, "ETH");
 
 // ---------------- ABIs ----------------
 
@@ -52,10 +50,8 @@ const CONTRACT_ABI = [
 // ---------------- BLOCKCHAIN SETUP ----------------
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
-// Sadece okuma işlemleri ve event kontrolü için contract instance
 const readContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
 
-// Yazma işlemleri (Finalize) için signer
 let signer = null;
 let writeContract = null;
 
@@ -63,31 +59,23 @@ if (process.env.BACKEND_WALLET_PRIVATE_KEY) {
   try {
     signer = new ethers.Wallet(process.env.BACKEND_WALLET_PRIVATE_KEY, provider);
     writeContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-    console.log("✅ Backend Cüzdan Hazır:", signer.address);
+    console.log("✅ Backend Wallet Ready:", signer.address);
   } catch (e) {
-    console.error("❌ Cüzdan Hatası:", e.message);
+    console.error("❌ Wallet Error:", e.message);
   }
 } else {
-  console.warn("⚠️ UYARI: Private Key girilmemiş. Otomatik ödeme çalışmaz.");
+  console.warn("⚠️ WARNING: No Private Key. Auto-payout disabled.");
 }
 
-// ---------------- HELPERS (GÜVENLİK & DB) ----------------
+// ---------------- HELPERS ----------------
 
-// KULLANICI PARAYI ÖDEMİŞ Mİ KONTROLÜ
 async function hasUserPaid(roundId, walletAddress) {
     try {
-        // Blockchain'den "Joined" eventlerini filtrele
-        // Bu cüzdan, bu round ID için event yaymış mı?
         const filter = readContract.filters.Joined(walletAddress, roundId);
-        
-        // Son 10.000 bloğu taramak yerine genelde startBlock verilir ama
-        // şimdilik basit queryFilter kullanıyoruz. RPC limitine takılırsa block range eklenmeli.
         const events = await readContract.queryFilter(filter);
-        
         return events.length > 0;
     } catch (e) {
         console.error("Payment check error:", e);
-        // Hata varsa güvenli mod: Reddet.
         return false;
     }
 }
@@ -118,78 +106,60 @@ async function getWinnerForRound(roundId) {
   return rows[0] || null;
 }
 
-// ---------------- ROUND & POT LOGIC ----------------
-
-// Basit RAM Cache (Round kapandı mı?)
 const roundsMeta = {}; 
 
 async function checkThresholdAndMaybeClose(roundId) {
   if (roundsMeta[roundId]?.closed) return;
 
   try {
-    // 1. On-chain veriyi çek
     const info = await readContract.getCurrentRoundInfo();
     const potEth = Number(ethers.formatEther(info.pot));
-    const onChainId = Number(info.id);
-
-    console.log(`🔎 Pot Kontrol: Round #${roundId} (OnChain: #${onChainId}) - Pot: ${potEth} ETH`);
-
-    // Pot hedefi tutmadıysa çık
+    
     if (potEth < THRESHOLD_ETH) return;
 
-    // 2. Kazananı DB'den bul
     const winnerRow = await getWinnerForRound(roundId);
-    if (!winnerRow) {
-      console.log(`⚠️ Pot doldu ama veritabanında skor yok!`);
-      return;
-    }
+    if (!winnerRow) return;
 
     const winner = winnerRow.wallet;
-    console.log(`🏆 KAZANAN ADAYI: ${winner} (Skor: ${winnerRow.best_score_ms}ms)`);
+    
+    if (!writeContract) return;
 
-    if (!writeContract) {
-      console.warn("⚠️ Signer yok, finalizeRound çağrılamıyor.");
-      return;
-    }
-
-    // 3. Finalize Transaction Gönder
-    console.log("⏳ Finalize işlemi gönderiliyor...");
+    console.log("⏳ Finalizing round...");
     const tx = await writeContract.finalizeRound(winner);
     console.log("✅ Tx Hash:", tx.hash);
     
     await tx.wait();
-    console.log("✅ Round on-chain kapandı!");
-
     roundsMeta[roundId] = { closed: true, winner, potEth };
 
   } catch (e) {
-    console.error("❌ CheckThreshold Hatası:", e.message);
+    console.error("❌ CheckThreshold Error:", e.message);
   }
 }
 
-// ---------------- EXPRESS APP & ENDPOINTS ----------------
+// ---------------- EXPRESS APP ----------------
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "256kb" }));
 
-// 1. OYUN BAŞLAT (ZAMAN TUTUCU - START)
+// 1. START GAME (Timer & Payment Check)
 app.post("/api/start-game", async (req, res) => {
     try {
         const { wallet, roundId } = req.body;
         
-        if (!wallet || !roundId) return res.status(400).json({ error: "Eksik bilgi" });
+        if (!wallet || !roundId) return res.status(400).json({ error: "Missing data" });
 
-        // GÜVENLİK 1: Para ödemiş mi?
+        // SECURITY 1: Payment Check
         const isPaid = await hasUserPaid(roundId, wallet);
         if (!isPaid) {
-            console.log(`⛔ ${wallet} ödeme yapmadan oyuna girmeye çalıştı!`);
-            return res.status(403).json({ error: "Lütfen önce oyuna giriş ücretini ödeyin." });
+            console.log(`⛔ Unpaid attempt: ${wallet}`);
+            // "Entry fee required" mesajı Frontend'de yakalanacak!
+            return res.status(403).json({ error: "Entry fee required" });
         }
 
-        // GÜVENLİK 2: Oturum oluştur
+        // SECURITY 2: Create Session
         const sessionId = uuidv4();
-        const serverStartTime = Date.now(); // Sunucu saati esastır
+        const serverStartTime = Date.now();
 
         await pool.query(
             `INSERT INTO active_sessions (wallet_address, session_id, start_time, round_id)
@@ -199,72 +169,56 @@ app.post("/api/start-game", async (req, res) => {
             [wallet, sessionId, serverStartTime, roundId]
         );
 
-        console.log(`⏱️ START: ${wallet} (Round: ${roundId})`);
+        console.log(`⏱️ START: ${wallet}`);
         res.json({ ok: true, sessionId });
 
     } catch (e) {
         console.error("Start Game Error:", e);
-        res.status(500).json({ error: "Sunucu hatası" });
+        res.status(500).json({ error: "Server error" });
     }
 });
 
-// 2. SKOR GÖNDER (HİLE KONTROLÜ VE KAYIT)
+// 2. SUBMIT SCORE
 app.post("/api/submit-score", async (req, res) => {
     try {
         const { roundId, wallet, scoreMs, sessionId } = req.body;
 
-        if (!wallet || !sessionId) return res.status(400).json({ error: "Eksik parametre" });
+        if (!wallet || !sessionId) return res.status(400).json({ error: "Missing parameters" });
 
-        // A. Veritabanından oturumu çek
         const sessionRes = await pool.query(
             `SELECT * FROM active_sessions WHERE wallet_address = $1`, 
             [wallet]
         );
 
         if (sessionRes.rows.length === 0) {
-            return res.status(400).json({ error: "Oturum bulunamadı. Lütfen sayfayı yenileyip tekrar deneyin." });
+            return res.status(400).json({ error: "Session not found. Refresh page." });
         }
 
         const session = sessionRes.rows[0];
 
-        // B. Session ID Doğrulama
         if (session.session_id !== sessionId) {
-            return res.status(403).json({ error: "Geçersiz oturum!" });
+            return res.status(403).json({ error: "Invalid session ID." });
         }
 
-        // C. ZAMAN HİLESİ KONTROLÜ (Anti-Cheat)
+        // ANTI-CHEAT: Time Check
         const serverEndTime = Date.now();
-        // Veritabanından gelen start_time string olabilir, Number'a çevir
         const startTime = Number(session.start_time);
-        
-        // Sunucuda geçen gerçek süre
         const maxPossibleScore = serverEndTime - startTime;
-        
-        // 3 saniyelik ağ gecikmesi toleransı (Buffer)
-        const BUFFER_MS = 3000;
+        const BUFFER_MS = 4000; // Increased buffer slightly
 
         if (Number(scoreMs) > (maxPossibleScore + BUFFER_MS)) {
-            console.log(`🚨 HİLE TESPİTİ: ${wallet}`);
-            console.log(`İddia: ${scoreMs}ms, Gerçek: ${maxPossibleScore}ms`);
-            
-            // Hileciyi oturumdan at
+            console.log(`🚨 CHEAT DETECTED: ${wallet}`);
             await pool.query(`DELETE FROM active_sessions WHERE wallet_address = $1`, [wallet]);
-            return res.status(403).json({ error: "Skor doğrulanamadı (Zaman uyumsuzluğu)." });
+            return res.status(403).json({ error: "Time verification failed." });
         }
 
-        // D. Her şey temiz, skoru kaydet
         const row = await upsertScore({
             roundId,
             wallet,
             scoreMs: Number(scoreMs)
         });
 
-        console.log(`✅ SKOR: ${wallet} -> ${scoreMs}ms`);
-
-        // Oturumu sil (Tekrar kullanamasın)
         await pool.query(`DELETE FROM active_sessions WHERE wallet_address = $1`, [wallet]);
-
-        // Pot kontrolü
         await checkThresholdAndMaybeClose(roundId);
 
         res.json({ 
@@ -275,16 +229,14 @@ app.post("/api/submit-score", async (req, res) => {
 
     } catch (e) {
         console.error("Submit Score Error:", e);
-        res.status(500).json({ error: "Sunucu hatası" });
+        res.status(500).json({ error: "Server error" });
     }
 });
 
-// 3. LEADERBOARD
 app.get("/api/leaderboard", async (req, res) => {
   try {
     let roundId = Number(req.query.roundId);
     if (!roundId) {
-       // Onchain round id almayı dene, hata verirse 1 varsay
        try {
          const info = await readContract.getCurrentRoundInfo();
          roundId = Number(info.id);
@@ -301,12 +253,10 @@ app.get("/api/leaderboard", async (req, res) => {
     const { rows } = await pool.query(q, [roundId]);
     res.json(rows);
   } catch (e) {
-    console.error("Leaderboard Error:", e);
-    res.status(500).json({ error: "Liste alınamadı" });
+    res.status(500).json({ error: "Fetch failed" });
   }
 });
 
-// GENEL BİLGİ
 app.get("/", async (req, res) => {
     try {
         const info = await readContract.getCurrentRoundInfo();
@@ -317,12 +267,10 @@ app.get("/", async (req, res) => {
             finalized: info.finalized
         });
     } catch (e) {
-        res.json({ ok: true, status: "Backend Running", contractError: e.message });
+        res.json({ ok: true, status: "Backend Running", error: e.message });
     }
 });
 
-// ---------------- START SERVER ----------------
-
 app.listen(PORT, () => {
-  console.log(`🚀 Server ${PORT} portunda çalışıyor.`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
