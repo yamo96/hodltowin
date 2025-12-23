@@ -8,7 +8,7 @@ import Leaderboard from "./components/Leaderboard";
 import RulesModal from "./components/RulesModal";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
-const CONTRACT_ADDRESS = "0xeA2614aaaC15BBCC525836a5EEF7A17345cEfa74";
+const CONTRACT_ADDRESS = "0x28BEC82eba8d0A7A394Bbed6843EB94202C45068";
 
 const ENTRY_FEE_ETH = Number(import.meta.env.VITE_ENTRY_FEE_ETH || "0.0003");
 const RPC_URL = import.meta.env.VITE_BASE_RPC_URL || "";
