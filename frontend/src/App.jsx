@@ -127,16 +127,22 @@ export default function App() {
   }, []);
 
   // ---------- reads ----------
+  
+  // FIX 1: Pot sadece Blockchain'den kesin gelirse güncellensin.
   const fetchPot = async () => {
     try {
       if (!RPC_URL || !CONTRACT_ADDRESS) return;
       const provider = new ethers.JsonRpcProvider(RPC_URL);
       const contract = new ethers.Contract(CONTRACT_ADDRESS, READ_ABI, provider);
       const [id, pot] = await contract.getCurrentRoundInfo();
-      setRoundId(Number(id));
-      setPotEth(ethers.formatEther(pot));
+      
+      if (id !== undefined && pot !== undefined) {
+          setRoundId(Number(id));
+          setPotEth(ethers.formatEther(pot));
+      }
     } catch (e) {
-      console.error("fetchPot error", e);
+      console.error("fetchPot error (ignoring to prevent UI flicker)", e);
+      // Hata alınca potu SIFIRLAMA, olduğu gibi bırak.
     }
   };
 
@@ -167,6 +173,28 @@ export default function App() {
   }, []);
 
   useEffect(() => { fetchLeaderboard(roundId); }, [roundId]);
+
+  // FIX 2: Leaderboard yüklendiğinde "Best Score"u güncelle
+  useEffect(() => {
+    if (!account || leaderboard.length === 0) return;
+
+    // Leaderboard içinde beni bul
+    const myEntry = leaderboard.find((row) => 
+      row.wallet.toLowerCase() === account.toLowerCase()
+    );
+
+    // Eğer varsam ve oradaki skor benim şu an ekranda yazandan iyiyse, onu al.
+    if (myEntry) {
+      setBestScoreMs((prevBest) => {
+        const serverBest = Number(myEntry.bestScoreMs);
+        // Eğer yereldeki skor yoksa veya sunucudaki daha iyiyse güncelle
+        if (!prevBest || serverBest > prevBest) {
+          return serverBest;
+        }
+        return prevBest;
+      });
+    }
+  }, [leaderboard, account]);
 
   useEffect(() => {
     if (!account) return setHasEntry(false);
@@ -199,7 +227,9 @@ export default function App() {
       setHasEntry(true);
       localStorage.setItem(entryKey(from, roundId), "1");
       setStatus("Entry confirmed. Now HODL.");
-      fetchPot();
+      
+      // FIX 3: Potu manuel artırma (Blockchain'den gelmesini bekle)
+      // fetchPot(); // Bunu çağırabiliriz ama setPotEth manuel yapmıyoruz.
       return true;
     } catch (e) {
       setStatus(`Payment failed: ${parseWalletError(e)}`);
