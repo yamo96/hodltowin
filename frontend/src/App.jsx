@@ -98,6 +98,9 @@ export default function App() {
   const intervalRef = useRef(null);
   const sessionIdRef = useRef(null);
   const roundIdRef = useRef(1);
+  
+  // FİZİKSEL BASMA TAKİBİ (YENİ EKLENDİ)
+  const isPressedRef = useRef(false);
 
   // loading guard
   const [lbLoading, setLbLoading] = useState(false);
@@ -127,8 +130,6 @@ export default function App() {
   }, []);
 
   // ---------- reads ----------
-  
-  // FIX 1: Pot sadece Blockchain'den kesin gelirse güncellensin.
   const fetchPot = async () => {
     try {
       if (!RPC_URL || !CONTRACT_ADDRESS) return;
@@ -141,8 +142,7 @@ export default function App() {
           setPotEth(ethers.formatEther(pot));
       }
     } catch (e) {
-      console.error("fetchPot error (ignoring to prevent UI flicker)", e);
-      // Hata alınca potu SIFIRLAMA, olduğu gibi bırak.
+      console.error("fetchPot error", e);
     }
   };
 
@@ -174,23 +174,15 @@ export default function App() {
 
   useEffect(() => { fetchLeaderboard(roundId); }, [roundId]);
 
-  // FIX 2: Leaderboard yüklendiğinde "Best Score"u güncelle
   useEffect(() => {
     if (!account || leaderboard.length === 0) return;
-
-    // Leaderboard içinde beni bul
     const myEntry = leaderboard.find((row) => 
       row.wallet.toLowerCase() === account.toLowerCase()
     );
-
-    // Eğer varsam ve oradaki skor benim şu an ekranda yazandan iyiyse, onu al.
     if (myEntry) {
       setBestScoreMs((prevBest) => {
         const serverBest = Number(myEntry.bestScoreMs);
-        // Eğer yereldeki skor yoksa veya sunucudaki daha iyiyse güncelle
-        if (!prevBest || serverBest > prevBest) {
-          return serverBest;
-        }
+        if (!prevBest || serverBest > prevBest) return serverBest;
         return prevBest;
       });
     }
@@ -227,9 +219,6 @@ export default function App() {
       setHasEntry(true);
       localStorage.setItem(entryKey(from, roundId), "1");
       setStatus("Entry confirmed. Now HODL.");
-      
-      // FIX 3: Potu manuel artırma (Blockchain'den gelmesini bekle)
-      // fetchPot(); // Bunu çağırabiliriz ama setPotEth manuel yapmıyoruz.
       return true;
     } catch (e) {
       setStatus(`Payment failed: ${parseWalletError(e)}`);
@@ -291,17 +280,24 @@ export default function App() {
     await submitScore(pendingScore, pendingSessionId);
   };
 
-  // ---------- hold logic (FIXED LOOP ISSUE) ----------
+  // ---------- hold logic (FIXED: ASYNC RELEASE ISSUE) ----------
   const startHolding = async (e) => {
     e?.preventDefault?.();
     if (isPaying) return;
     if (!account) return connectWallet();
     if (pendingScore != null) return;
 
-    // 1. Check local entry state
+    // Basıldığını işaretle (Fiziksel takip)
+    isPressedRef.current = true;
+
     if (!hasEntry) {
       const ok = await sendEntryTx();
-      if (!ok) return;
+      if (!ok) {
+         // İşlem başarısız olduysa basma durumunu iptal et
+         isPressedRef.current = false;
+         return; 
+      }
+      isPressedRef.current = false; // Tx bitince yeni bir click beklesin
       return; 
     }
 
@@ -316,15 +312,20 @@ export default function App() {
             body: JSON.stringify({ roundId, wallet: account })
         });
         
+        // KRİTİK KONTROL: Sunucudan cevap gelene kadar adam elini çekti mi?
+        // Eğer çektiyse, oyunu hiç başlatma!
+        if (!isPressedRef.current) {
+            console.log("User released button during server sync. Aborting start.");
+            return;
+        }
+        
         const data = await res.json();
         
-        // 🔥 CRITICAL FIX: Backend "Payment required" derse, local state'i temizle!
         if (!res.ok) {
             const err = data.error || "Unknown";
             setStatus(`Start failed: ${err}`);
 
             if (err.includes("Entry fee required") || res.status === 403) {
-                // Backend: "Para yok" -> Frontend: "Tamam, HODL'ı PAY butonuna çeviriyorum"
                 console.log("Payment out of sync, resetting local state.");
                 setHasEntry(false);
                 localStorage.removeItem(entryKey(account, roundId));
@@ -350,6 +351,10 @@ export default function App() {
 
   const stopHolding = async (e) => {
     e?.preventDefault?.();
+    
+    // Elini çektiği an fiziksel olarak "bıraktı" diye işaretle.
+    isPressedRef.current = false;
+
     if (!holding) return;
 
     setHolding(false);
@@ -362,14 +367,17 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!holding) return;
-    const handleVisibility = () => { if (document.hidden) stopHolding(); };
-    const handleBlur = () => stopHolding();
-    document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("blur", handleBlur);
+    // Sayfa değiştirilirse veya blur olursa da bırakılmış say
+    const handleRelease = () => {
+       if (holding) stopHolding();
+       isPressedRef.current = false;
+    };
+
+    document.addEventListener("visibilitychange", handleRelease);
+    window.addEventListener("blur", handleRelease);
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("blur", handleBlur);
+      document.removeEventListener("visibilitychange", handleRelease);
+      window.removeEventListener("blur", handleRelease);
     };
   }, [holding]);
 
